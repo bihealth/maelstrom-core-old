@@ -1,0 +1,4 @@
+@HD	VN:1.6	SO:unordered
+@SQ	SN:one	LN:100000
+@SQ	SN:two	LN:100000
+@CO	Example with read pair "pair_expected" that does not have sufficient number of soft-clipped bases and is filtered out.

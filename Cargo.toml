@@ -5,19 +5,25 @@ authors = ["Manuel Holtgrewe <manuel.holtgrewe@bihealth.de>"]
 edition = "2018"
 
 [dependencies]
-bio = "*"
-bio-types = "*"
-rust-htslib = "*"
-git-version = "0.3.4"
+bloom = "0.3"
+bio = "0.32"
+bio-types = "0.7"
+indicatif = "0.15"
+rust-htslib = { version = "0.32", features = ["serde"] }
+git-version = "0.3"
 log = "0.4"
 fern = "0.5"
-rocksdb = "*"
-clap = "*"
+chrono = "0.4"
+clap = "2.33"
 serde = "1.0"
 serde_derive = "1.0"
 serde_json = "1.0"
-toml = "0.5.6"
-thiserror = "*"
+tempdir = "0.3"
+toml = "0.5"
+thiserror = "1"
+
+[dev-dependencies]
+pretty_assertions = "0.6"
 
 [[bin]]
 name = "snappysv-scanbam"

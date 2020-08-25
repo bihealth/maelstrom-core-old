@@ -18,3 +18,4 @@ toml = "0.5"
 
 [dev-dependencies]
 pretty_assertions = "0.6"
+tempdir = "0.3"

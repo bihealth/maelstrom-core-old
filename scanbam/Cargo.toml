@@ -18,10 +18,10 @@ clap = "2.33"
 serde = "1.0"
 serde_derive = "1.0"
 serde_json = "1.0"
-tempdir = "0.3"
 toml = "0.5"
 thiserror = "1"
 lib-config = { path = "../lib-config" }
 
 [dev-dependencies]
 pretty_assertions = "0.6"
+tempdir = "0.3"

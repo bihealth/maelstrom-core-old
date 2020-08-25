@@ -308,7 +308,6 @@ fn extract_reads(
         }
     }
 
-    // let header = bam::Header::from_template(reader.header());
     let header_view = bam::HeaderView::from_header(&header);
     let target_count = header_view.target_count() as usize;
     let mut writer = bam::Writer::from_path(

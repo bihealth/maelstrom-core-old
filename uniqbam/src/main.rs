@@ -1,11 +1,12 @@
 /// uniqbam -- Remove duplicate rows from BAM files (as created by scanbam)
+use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 
 use clap::{App, Arg, ArgMatches};
 use git_version::git_version;
 use log::{debug, info, LevelFilter};
-use rust_htslib::bam;
+use rust_htslib::{bam, bam::Read};
 
 use lib_config::Config;
 
@@ -66,8 +67,86 @@ impl Options {
     }
 }
 
+/// Return `bam::Format` for the given filename.
+fn guess_bam_format(filename: &str) -> bam::Format {
+    if filename.ends_with(".bam") {
+        bam::Format::BAM
+    } else {
+        bam::Format::SAM
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
+struct RecordIdentifier {
+    first: bool,
+    tid: i32,
+    pos: i64,
+}
+
+impl RecordIdentifier {
+    fn from_record(record: &bam::Record) -> Self {
+        Self {
+            first: record.is_first_in_template(),
+            tid: record.tid(),
+            pos: record.pos(),
+        }
+    }
+}
+
+/// Write unique reads from chunk into the writer.
+fn write_unique(
+    chunk: &Vec<bam::Record>,
+    writer: &mut bam::Writer,
+) -> Result<(), bam::errors::Error> {
+    let mut seen = HashSet::new();
+
+    for record in chunk.iter() {
+        let record_id = RecordIdentifier::from_record(record);
+        if !seen.contains(&record_id) {
+            writer.write(&record)?;
+            seen.insert(record_id);
+        }
+    }
+
+    Ok(())
+}
+
 /// Main entry point after parsing command line and loading options.
-fn perform_filtration(_options: &Options, _config: &Config) -> Result<(), bam::errors::Error> {
+fn perform_filtration(options: &Options, config: &Config) -> Result<(), bam::errors::Error> {
+    info!("Starting to scan BAM file...");
+
+    let mut reader = bam::Reader::from_path(&options.path_input)?;
+    let header = bam::Header::from_template(reader.header());
+    let mut writer = bam::Writer::from_path(
+        &options.path_output,
+        &header,
+        guess_bam_format(&options.path_output),
+    )?;
+    if config.htslib_io_threads > 0 {
+        reader.set_threads(config.htslib_io_threads)?;
+        writer.set_threads(config.htslib_io_threads)?;
+    }
+
+    let mut chunk: Vec<bam::Record> = Vec::new();
+    let mut buffer = bam::Record::new();
+    loop {
+        if !reader.read(&mut buffer)? {
+            break;
+        } else if chunk.is_empty() {
+            chunk.push(buffer.clone());
+        } else {
+            if buffer.qname() != chunk[0].qname() {
+                write_unique(&chunk, &mut writer)?;
+                chunk.clear();
+            }
+            chunk.push(buffer.clone());
+        }
+    }
+    if !chunk.is_empty() {
+        write_unique(&chunk, &mut writer)?;
+    }
+
+    info!("Done scanning BAM file...");
     Ok(())
 }
 
@@ -133,4 +212,56 @@ fn main() -> Result<(), Error> {
 }
 
 #[cfg(test)]
-mod tests {}
+mod tests {
+    use pretty_assertions::assert_eq;
+    use std::fs;
+    use tempdir::TempDir;
+
+    /// Helper that runs `perform_filtration()` and compares the result.
+    fn _perform_filtration_and_test(
+        tmp_dir: &TempDir,
+        path_input: &str,
+        path_expected: &str,
+    ) -> Result<(), super::Error> {
+        let path_output = String::from(tmp_dir.path().join("out.sam").to_str().unwrap());
+        let options = super::Options {
+            verbosity: 1, // disable progress bar
+            path_config: None,
+            path_input: String::from(path_input),
+            path_output: path_output.clone(),
+            overwrite: false,
+        };
+        let config: super::Config = toml::from_str("").unwrap();
+
+        super::perform_filtration(&options, &config)?;
+
+        assert_eq!(
+            fs::read_to_string(path_expected).unwrap(),
+            fs::read_to_string(&path_output).unwrap()
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn perform_filtration_one_pair() -> Result<(), super::Error> {
+        let tmp_dir = TempDir::new("tests")?;
+        _perform_filtration_and_test(
+            &tmp_dir,
+            "./src/tests/data/ex-duplicates.bam",
+            "./src/tests/data/ex-duplicates.expected.sam",
+        )?;
+        Ok(())
+    }
+
+    #[test]
+    fn perform_filtration_two_pairs() -> Result<(), super::Error> {
+        let tmp_dir = TempDir::new("tests")?;
+        _perform_filtration_and_test(
+            &tmp_dir,
+            "./src/tests/data/ex-duplicates2.bam",
+            "./src/tests/data/ex-duplicates2.expected.sam",
+        )?;
+        Ok(())
+    }
+}

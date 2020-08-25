@@ -1,4 +1,4 @@
-/// scanbam -- read through a BAM file and extract read pairs exhibiting PE and SR signatures.
+/// uniqbam -- remove duplicate rows from BAM files (as created by scanbam)
 use std::fs;
 use std::path::Path;
 use std::str;
@@ -590,8 +590,8 @@ mod tests {
         let tmp_dir = TempDir::new("tests")?;
         _extract_reads_and_test(
             &tmp_dir,
-            "./src/tests/scanbam/ex-pe-hard-leading.sorted.bam",
-            "./src/tests/scanbam/ex-pe-hard-leading.expected.sam",
+            "./src/tests/data/ex-pe-hard-leading.sorted.bam",
+            "./src/tests/data/ex-pe-hard-leading.expected.sam",
         )?;
         Ok(())
     }
@@ -601,8 +601,8 @@ mod tests {
         let tmp_dir = TempDir::new("tests")?;
         _extract_reads_and_test(
             &tmp_dir,
-            "./src/tests/scanbam/ex-pe-hard-trailing.sorted.bam",
-            "./src/tests/scanbam/ex-pe-hard-trailing.expected.sam",
+            "./src/tests/data/ex-pe-hard-trailing.sorted.bam",
+            "./src/tests/data/ex-pe-hard-trailing.expected.sam",
         )?;
         Ok(())
     }
@@ -612,8 +612,8 @@ mod tests {
         let tmp_dir = TempDir::new("tests")?;
         _extract_reads_and_test(
             &tmp_dir,
-            "./src/tests/scanbam/ex-pe-soft-neg.sorted.bam",
-            "./src/tests/scanbam/ex-pe-soft-neg.expected.sam",
+            "./src/tests/data/ex-pe-soft-neg.sorted.bam",
+            "./src/tests/data/ex-pe-soft-neg.expected.sam",
         )?;
         Ok(())
     }
@@ -622,8 +622,8 @@ mod tests {
         let tmp_dir = TempDir::new("tests")?;
         _extract_reads_and_test(
             &tmp_dir,
-            "./src/tests/scanbam/ex-pe-soft-pos.sorted.bam",
-            "./src/tests/scanbam/ex-pe-soft-pos.expected.sam",
+            "./src/tests/data/ex-pe-soft-pos.sorted.bam",
+            "./src/tests/data/ex-pe-soft-pos.expected.sam",
         )?;
         Ok(())
     }
@@ -633,8 +633,8 @@ mod tests {
         let tmp_dir = TempDir::new("tests")?;
         _extract_reads_and_test(
             &tmp_dir,
-            "./src/tests/scanbam/ex-pe-tid.sorted.bam",
-            "./src/tests/scanbam/ex-pe-tid.expected.sam",
+            "./src/tests/data/ex-pe-tid.sorted.bam",
+            "./src/tests/data/ex-pe-tid.expected.sam",
         )?;
         Ok(())
     }
@@ -644,8 +644,8 @@ mod tests {
         let tmp_dir = TempDir::new("tests")?;
         _extract_reads_and_test(
             &tmp_dir,
-            "./src/tests/scanbam/ex-pe-tlen.sorted.bam",
-            "./src/tests/scanbam/ex-pe-tlen.expected.sam",
+            "./src/tests/data/ex-pe-tlen.sorted.bam",
+            "./src/tests/data/ex-pe-tlen.expected.sam",
         )?;
         Ok(())
     }
@@ -655,8 +655,8 @@ mod tests {
         let tmp_dir = TempDir::new("tests")?;
         _extract_reads_and_test(
             &tmp_dir,
-            "./src/tests/scanbam/ex-pe-orient.sorted.bam",
-            "./src/tests/scanbam/ex-pe-orient.expected.sam",
+            "./src/tests/data/ex-pe-orient.sorted.bam",
+            "./src/tests/data/ex-pe-orient.expected.sam",
         )?;
         Ok(())
     }

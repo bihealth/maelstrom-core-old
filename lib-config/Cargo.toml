@@ -1,0 +1,9 @@
+[package]
+name = "lib-config"
+version = "0.1.0"
+authors = ["Manuel Holtgrewe <manuel.holtgrewe@bihealth.de>"]
+edition = "2018"
+
+[dependencies]
+clap = "2.33"
+serde = { version = "1.0", features = ["derive"] }

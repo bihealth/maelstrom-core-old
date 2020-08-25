@@ -1,4 +1,4 @@
-/// uniqbam -- remove duplicate rows from BAM files (as created by scanbam)
+/// scanbam -- Scan BAM file for discordant and clipped reads
 use std::fs;
 use std::path::Path;
 use std::str;
@@ -9,106 +9,12 @@ use git_version::git_version;
 use indicatif::{ProgressBar, ProgressStyle};
 use log::{debug, info, warn, LevelFilter};
 use rust_htslib::{bam, bam::Read};
-use serde::Deserialize;
-use thiserror::Error;
 
-fn default_lib_estimation_sample_size() -> usize {
-    100_000
-}
-
-fn default_library_cutoff_deviation() -> f64 {
-    0.1
-}
-
-fn default_library_cutoff_sd_mult() -> f64 {
-    7.0
-}
-
-fn default_lib_estimation_sd_mult() -> f64 {
-    3.0
-}
-
-fn default_sliding_window_margin() -> i64 {
-    200
-}
-
-fn default_sliding_window_size() -> i64 {
-    10_000
-}
-
-fn default_bloom_false_positive_rate() -> f32 {
-    return 0.0001;
-}
-
-fn default_bloom_expected_read_count() -> u32 {
-    return 100_000_000;
-}
-
-fn default_min_clipped_bases() -> i64 {
-    return 20;
-}
-
-fn default_supplementary_masked_as_secondary() -> bool {
-    return true;
-}
-
-fn default_htslib_io_threads() -> usize {
-    return 0;
-}
-
-/// Program configuration, from config file.
-#[derive(Deserialize, Debug)]
-struct Config {
-    /// Number of records to read for estimating the library length.
-    #[serde(default = "default_lib_estimation_sample_size")]
-    lib_estimation_sample_size: usize,
-
-    /// Library deviation to use for cut-off.
-    #[serde(default = "default_library_cutoff_deviation")]
-    library_cutoff_deviation: f64,
-
-    /// Standard deviation cutoff.
-    #[serde(default = "default_library_cutoff_sd_mult")]
-    library_cutoff_sd_mult: f64,
-
-    /// Standard deviation multiplicator.
-    #[serde(default = "default_lib_estimation_sd_mult")]
-    lib_estimation_sd_mult: f64,
-
-    /// Window margin for fetching.
-    #[serde(default = "default_sliding_window_margin")]
-    sliding_window_margin: i64,
-
-    /// Window size for fetching.
-    #[serde(default = "default_sliding_window_size")]
-    sliding_window_size: i64,
-
-    /// Bloom filter FPR.
-    #[serde(default = "default_bloom_false_positive_rate")]
-    bloom_false_positive_rate: f32,
-
-    /// Expected number of reads; for bloom filter.
-    #[serde(default = "default_bloom_expected_read_count")]
-    bloom_expected_read_count: u32,
-
-    /// Number of clipped bases (and maybe split aligned bases) that are interesting.
-    #[serde(default = "default_min_clipped_bases")]
-    min_clipped_bases: i64,
-
-    /// Whether to expect supplementary alignments to be masked as secondary.  This is/was common
-    /// when older Picard versions were used with BWA-MEM that did not support the supplementary
-    /// alignment flag yet.
-    #[serde(default = "default_supplementary_masked_as_secondary")]
-    supplementary_masked_as_secondary: bool,
-
-    /// Number of I/O threads to use.
-    #[serde(default = "default_htslib_io_threads")]
-    htslib_io_threads: usize,
-}
+use lib_config::Config;
 
 /// Global error type.
-#[derive(Error, Debug)]
-enum ScanbamError {
+#[derive(thiserror::Error, Debug)]
+enum Error {
     /// A command line option is missing.
     #[error("missing command line argument")]
     OptionMissing(),
@@ -146,17 +52,17 @@ struct Options {
 }
 
 impl Options {
-    pub fn from_arg_matches<'a>(matches: &ArgMatches<'a>) -> Result<Self, ScanbamError> {
+    pub fn from_arg_matches<'a>(matches: &ArgMatches<'a>) -> Result<Self, Error> {
         Ok(Options {
             verbosity: matches.occurrences_of("v"),
             path_config: matches.value_of("config").map(|s| s.to_string()),
             path_input: match matches.value_of("input") {
                 Some(x) => String::from(x),
-                None => return Err(ScanbamError::OptionMissing()),
+                None => return Err(Error::OptionMissing()),
             },
             path_output: match matches.value_of("output") {
                 Some(x) => String::from(x),
-                None => return Err(ScanbamError::OptionMissing()),
+                None => return Err(Error::OptionMissing()),
             },
             overwrite: matches.occurrences_of("overwrite") > 0,
         })
@@ -321,7 +227,7 @@ fn extract_reads_from_current_window(
     config: &Config,
     lib_properties: &LibraryProperties,
     pass: i32,
-) -> Result<(), ScanbamError> {
+) -> Result<(), Error> {
     let mut pos = 0;
     for record in buffer.iter() {
         pos = record.pos();
@@ -362,7 +268,7 @@ fn extract_reads(
     options: &Options,
     config: &Config,
     lib_properties: &LibraryProperties,
-) -> Result<(), ScanbamError> {
+) -> Result<(), Error> {
     // Construct bloom filter; used for collecting reads to read.
     let mut bloom = BloomFilter::with_rate(
         config.bloom_false_positive_rate,
@@ -484,7 +390,7 @@ fn extract_reads(
     Ok(())
 }
 
-fn main() -> Result<(), ScanbamError> {
+fn main() -> Result<(), Error> {
     // Setup command line parser and parse options.
     let matches = App::new("snappysv-scanbam")
         .version(git_version!())
@@ -502,7 +408,7 @@ fn main() -> Result<(), ScanbamError> {
 
     // Output file must not exist yet.
     if Path::new(&options.path_output).exists() && !options.overwrite {
-        return Err(ScanbamError::OutputFileExists());
+        return Err(Error::OutputFileExists());
     }
 
     // Setup logging verbosity.
@@ -558,7 +464,7 @@ mod tests {
         tmp_dir: &TempDir,
         path_input: &str,
         path_expected: &str,
-    ) -> Result<(), super::ScanbamError> {
+    ) -> Result<(), super::Error> {
         let path_output = String::from(tmp_dir.path().join("out.sam").to_str().unwrap());
         let options = super::Options {
             verbosity: 1, // disable progress bar
@@ -586,7 +492,7 @@ mod tests {
     }
 
     #[test]
-    fn identify_pairs_by_hard_clipping_leading() -> Result<(), super::ScanbamError> {
+    fn identify_pairs_by_hard_clipping_leading() -> Result<(), super::Error> {
         let tmp_dir = TempDir::new("tests")?;
         _extract_reads_and_test(
             &tmp_dir,
@@ -597,7 +503,7 @@ mod tests {
     }
 
     #[test]
-    fn identify_pairs_by_hard_clipping_trailing() -> Result<(), super::ScanbamError> {
+    fn identify_pairs_by_hard_clipping_trailing() -> Result<(), super::Error> {
         let tmp_dir = TempDir::new("tests")?;
         _extract_reads_and_test(
             &tmp_dir,
@@ -608,7 +514,7 @@ mod tests {
     }
 
     #[test]
-    fn identify_pairs_by_soft_clipping_negative() -> Result<(), super::ScanbamError> {
+    fn identify_pairs_by_soft_clipping_negative() -> Result<(), super::Error> {
         let tmp_dir = TempDir::new("tests")?;
         _extract_reads_and_test(
             &tmp_dir,
@@ -618,7 +524,7 @@ mod tests {
         Ok(())
     }
     #[test]
-    fn identify_pairs_by_soft_clipping_positive() -> Result<(), super::ScanbamError> {
+    fn identify_pairs_by_soft_clipping_positive() -> Result<(), super::Error> {
         let tmp_dir = TempDir::new("tests")?;
         _extract_reads_and_test(
             &tmp_dir,
@@ -629,7 +535,7 @@ mod tests {
     }
 
     #[test]
-    fn identify_pairs_by_different_tid() -> Result<(), super::ScanbamError> {
+    fn identify_pairs_by_different_tid() -> Result<(), super::Error> {
         let tmp_dir = TempDir::new("tests")?;
         _extract_reads_and_test(
             &tmp_dir,
@@ -640,7 +546,7 @@ mod tests {
     }
 
     #[test]
-    fn identify_pairs_by_large_tlen() -> Result<(), super::ScanbamError> {
+    fn identify_pairs_by_large_tlen() -> Result<(), super::Error> {
         let tmp_dir = TempDir::new("tests")?;
         _extract_reads_and_test(
             &tmp_dir,
@@ -651,7 +557,7 @@ mod tests {
     }
 
     #[test]
-    fn identify_pairs_by_orientation() -> Result<(), super::ScanbamError> {
+    fn identify_pairs_by_orientation() -> Result<(), super::Error> {
         let tmp_dir = TempDir::new("tests")?;
         _extract_reads_and_test(
             &tmp_dir,

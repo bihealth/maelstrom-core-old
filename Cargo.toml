@@ -1,4 +1,6 @@
 [workspace]
 members = [
     "scanbam",
+    "uniqbam",
+    "lib-config",
 ]

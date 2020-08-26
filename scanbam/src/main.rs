@@ -10,6 +10,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 use log::{debug, info, warn, LevelFilter};
 use rust_htslib::{bam, bam::Read};
 
+use lib_common::guess_bam_format;
 use lib_config::Config;
 
 /// Global error type.
@@ -252,15 +253,6 @@ fn extract_reads_from_current_window(
     }
 
     Ok(())
-}
-
-/// Return `bam::Format` for the given filename.
-fn guess_bam_format(filename: &str) -> bam::Format {
-    if filename.ends_with(".bam") {
-        bam::Format::BAM
-    } else {
-        bam::Format::SAM
-    }
 }
 
 /// Extract reads from the path to the BAM file in the options (path_input) to the output BAM file.

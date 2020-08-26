@@ -12,6 +12,7 @@ log = "0.4"
 fern = "0.5"
 chrono = "0.4"
 clap = "2.33"
+lib-common = { path = "../lib-common" }
 lib-config = { path = "../lib-config" }
 thiserror = "1"
 toml = "0.5"

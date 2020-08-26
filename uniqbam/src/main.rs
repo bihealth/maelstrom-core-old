@@ -8,6 +8,7 @@ use git_version::git_version;
 use log::{debug, info, LevelFilter};
 use rust_htslib::{bam, bam::Read};
 
+use lib_common::guess_bam_format;
 use lib_config::Config;
 
 /// Global error type.
@@ -64,15 +65,6 @@ impl Options {
             },
             overwrite: matches.occurrences_of("overwrite") > 0,
         })
-    }
-}
-
-/// Return `bam::Format` for the given filename.
-fn guess_bam_format(filename: &str) -> bam::Format {
-    if filename.ends_with(".bam") {
-        bam::Format::BAM
-    } else {
-        bam::Format::SAM
     }
 }
 

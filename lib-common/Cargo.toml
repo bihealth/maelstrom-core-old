@@ -1,0 +1,12 @@
+[package]
+name = "lib-common"
+version = "0.1.0"
+authors = ["Manuel Holtgrewe <manuel.holtgrewe@bihealth.de>"]
+edition = "2018"
+
+[dependencies]
+rust-htslib = { version = "0.32", features = ["serde"] }
+
+[dev-dependencies]
+matches = "0.1"
+pretty_assertions = "0.6"

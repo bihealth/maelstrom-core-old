@@ -3,4 +3,5 @@ members = [
     "scanbam",
     "uniqbam",
     "lib-config",
+    "lib-common",
 ]

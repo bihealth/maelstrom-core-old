@@ -236,7 +236,7 @@ fn extract_reads_from_current_window(
             break;
         }
         if bloom.contains(&record.qname()) || is_interesting(&record, &lib_properties, &config) {
-            println!(
+            debug!(
                 "Writing {}/{}",
                 str::from_utf8(&record.qname()).unwrap(),
                 record.is_first_in_template()

@@ -38,6 +38,87 @@ pub fn guess_bcf_format(filename: &str) -> BcfFormatInfo {
     }
 }
 
+/// Build new `bcf::Header`.
+pub fn build_vcf_header(template: &bcf::header::HeaderView) -> Result<bcf::Header, bcf::Error> {
+    let mut header = bcf::Header::new();
+
+    // Copy over sequence records.
+    for record in template.header_records() {
+        match record {
+            bcf::header::HeaderRecord::Contig { key: _, values } => {
+                header.push_record(
+                    format!(
+                        "##contig=<ID={},length={}>",
+                        values
+                            .get("ID")
+                            .expect("source contig header does not have ID"),
+                        values
+                            .get("length")
+                            .expect("source contig header does not have length")
+                    )
+                    .as_bytes(),
+                );
+            }
+            _ => (),
+        }
+    }
+
+    // Fields: ALT, INFO, FORMAT.
+    let alts = vec![
+        ("DEL", "Deletion"),
+        ("DUP", "Duplication"),
+        ("INV", "Inversion"),
+    ];
+    for (id, desc) in alts {
+        header.push_record(format!("##ALT=<ID={},length={}>", &id, &desc).as_bytes());
+    }
+    let infos = vec![
+        ("SVTYPE", "1", "String", "Type of structural variant"),
+        ("CHR2", "1", "String", "Chromosome of end coordinate"),
+        ("END", "1", "Integer", "End position of linear SV"),
+        ("END2", "1", "Integer", "End position of BND"),
+        ("STRANDS", "1", "String", "Breakpoint strandedness"),
+        ("SVLEN", "1", "Integer", "SV length"),
+        ("ALGORITHMS", ".", "String", "Source algorithms"),
+    ];
+    for (id, number, type_, desc) in infos {
+        header.push_record(
+            format!(
+                "##INFO=<ID={},Number={},Type={},Description={}>",
+                &id, &number, &type_, &desc
+            )
+            .as_bytes(),
+        );
+    }
+    let formats = vec![
+        ("GT", "1", "String", "Genotype"),
+        ("delly", "1", "Integer", "Called by Delly"),
+    ];
+    for (id, number, type_, desc) in formats {
+        header.push_record(
+            format!(
+                "##FORMAT=<ID={},Number={},Type={},Description={}>",
+                &id, &number, &type_, &desc
+            )
+            .as_bytes(),
+        );
+    }
+
+    // Add samples.
+    for name in template.samples() {
+        header.push_sample(name);
+    }
+
+    Ok(header)
+}
+
+/// Enumeration for calling algorithms.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Algorithm {
+    /// Delly2
+    Delly,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1,25 +1,23 @@
 [package]
-name = "snappysv-scanbam"
+name = "snappysv-clusvcf"
 version = "0.1.0"
 authors = ["Manuel Holtgrewe <manuel.holtgrewe@bihealth.de>"]
 edition = "2018"
 
 [dependencies]
-bloom = "0.3"
 indicatif = "0.15"
+bio = "0.32"
+disjoint-sets = "0.4"
 rust-htslib = { version = "0.32", features = ["serde"] }
 git-version = "0.3"
 log = "0.4"
 fern = "0.5"
 chrono = "0.4"
 clap = "2.33"
-serde = "1.0"
-serde_derive = "1.0"
-serde_json = "1.0"
-toml = "0.5"
-thiserror = "1"
 lib-common = { path = "../lib-common" }
 lib-config = { path = "../lib-config" }
+thiserror = "1"
+toml = "0.5"
 
 [dev-dependencies]
 pretty_assertions = "0.6"

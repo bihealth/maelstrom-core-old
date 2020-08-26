@@ -11,7 +11,7 @@
 ##INFO=<ID=END,Number=1,Type=Integer,Description=End position of linear SV>
 ##INFO=<ID=END2,Number=1,Type=Integer,Description=End position of BND>
 ##INFO=<ID=STRANDS,Number=1,Type=String,Description=Breakpoint strandedness>
-##INFO=<ID=SVLEN,Number=1,Type=String,Description=SV length>
+##INFO=<ID=SVLEN,Number=1,Type=Integer,Description=SV length>
 ##INFO=<ID=ALGORITHMS,Number=.,Type=String,Description=Source algorithms>
 ##FORMAT=<ID=GT,Number=1,Type=String,Description=Genotype>
 ##FORMAT=<ID=delly,Number=1,Type=Integer,Description=Called by Delly>

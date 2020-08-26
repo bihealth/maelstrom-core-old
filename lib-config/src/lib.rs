@@ -1,6 +1,21 @@
 /// lib-config -- shared configuration.
 use serde::Deserialize;
 
+/// Clustering configuration for clusvcf.
+#[derive(Deserialize, Debug, Clone)]
+pub struct ClusterSettings {
+    /// Reciprocal overlap by size.
+    pub reciprocal_overlap: f32,
+    /// Maximal breakpoint distance.
+    pub max_bp_distance: Option<i64>,
+    /// Require strands to match.
+    pub match_strands: bool,
+    /// Require sv_type to match.
+    pub match_sv_type: bool,
+    /// Sample overlap to require, if any.
+    pub sample_overlap: Option<f32>,
+}
+
 fn default_lib_estimation_sample_size() -> usize {
     100_000
 }
@@ -26,31 +41,51 @@ fn default_sliding_window_size() -> i64 {
 }
 
 fn default_bloom_false_positive_rate() -> f32 {
-    return 0.0001;
+    0.0001
 }
 
 fn default_bloom_expected_read_count() -> u32 {
-    return 100_000_000;
+    100_000_000
 }
 
 fn default_min_clipped_bases() -> i64 {
-    return 20;
+    20
 }
 
 fn default_supplementary_masked_as_secondary() -> bool {
-    return true;
+    true
 }
 
 fn default_htslib_io_threads() -> usize {
-    return 0;
+    0
 }
 
 fn default_stdvcf_apply_filters() -> bool {
-    return true;
+    true
+}
+
+fn default_clusvcf_presets_per_tool_pe_sr() -> ClusterSettings {
+    ClusterSettings {
+        reciprocal_overlap: 0.1,
+        max_bp_distance: Some(300),
+        match_strands: true,
+        match_sv_type: true,
+        sample_overlap: None,
+    }
+}
+
+fn default_clusvcf_presets_per_tool_doc() -> ClusterSettings {
+    ClusterSettings {
+        reciprocal_overlap: 0.8,
+        max_bp_distance: None,
+        match_strands: true,
+        match_sv_type: true,
+        sample_overlap: None,
+    }
 }
 
 /// Program configuration, from config file.
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct Config {
     /// Number of records to read for estimating the library length.
     #[serde(default = "default_lib_estimation_sample_size")]
@@ -101,4 +136,12 @@ pub struct Config {
     /// Whether or not to interpret FILTER values in stdvcf.
     #[serde(default = "default_stdvcf_apply_filters")]
     pub stdvcf_apply_filters: bool,
+
+    /// Cluster preset for per-tool (PE/SR) aggregation.
+    #[serde(default = "default_clusvcf_presets_per_tool_pe_sr")]
+    pub clusvcf_presets_per_tool_pe_sr: ClusterSettings,
+
+    /// Cluster preset for per-tool (DoC) aggregation.
+    #[serde(default = "default_clusvcf_presets_per_tool_doc")]
+    pub clusvcf_presets_per_tool_doc: ClusterSettings,
 }

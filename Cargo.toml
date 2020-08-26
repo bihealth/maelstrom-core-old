@@ -2,6 +2,7 @@
 members = [
     "scanbam",
     "uniqbam",
+    "stdvcf",
     "lib-config",
     "lib-common",
 ]

@@ -181,7 +181,7 @@ fn main() -> Result<(), Error> {
         .chain(std::io::stderr())
         .apply()
         .unwrap();
-    info!("Starting snappysv-scanbam");
+    info!("Starting snappysv-uniqbam");
     info!("options: {:?}", &options);
 
     // Parse further settings from configuration file.

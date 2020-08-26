@@ -45,6 +45,10 @@ fn default_htslib_io_threads() -> usize {
     return 0;
 }
 
+fn default_stdvcf_apply_filters() -> bool {
+    return true;
+}
+
 /// Program configuration, from config file.
 #[derive(Deserialize, Debug)]
 pub struct Config {
@@ -93,4 +97,8 @@ pub struct Config {
     /// Number of I/O threads to use.
     #[serde(default = "default_htslib_io_threads")]
     pub htslib_io_threads: usize,
+
+    /// Whether or not to interpret FILTER values in stdvcf.
+    #[serde(default = "default_stdvcf_apply_filters")]
+    pub stdvcf_apply_filters: bool,
 }

@@ -382,7 +382,7 @@ fn cluster_records(
     let mut result = Vec::new();
 
     let cluster_settings = match options.setting.as_str() {
-        "per_tool_pe_sr" => config.clusvcf_presets_per_tool_pe_sr.clone(),
+        "per_tool_pesr" => config.clusvcf_presets_per_tool_pesr.clone(),
         "per_tool_doc" => config.clusvcf_presets_per_tool_doc.clone(),
         _ => Err(Error::UnknownClusterSettingName())?,
     };
@@ -644,7 +644,7 @@ fn main() -> Result<(), Error> {
             Arg::from_usage("-c, --config=[FILE] 'Sets a custom config file'"),
             Arg::from_usage(
                 "-s, --setting=<SETTING> 'Use cluster settings name, one of \
-                {per_tool_pe_sr,per_tool_doc}, default per_tool_pe_sr'",
+                {per_tool_pesr,per_tool_doc}, default per_tool_pesr'",
             ),
             Arg::from_usage("<input>... 'input file to read from'"),
             Arg::from_usage("<output> 'output file to write to'"),
@@ -712,7 +712,7 @@ mod tests {
     ) -> Result<(), super::Error> {
         let path_output = String::from(tmp_dir.path().join("out.vcf").to_str().unwrap());
         let options = super::Options {
-            setting: "per_tool_pe_sr".to_string(),
+            setting: "per_tool_pesr".to_string(),
             verbosity: 1, // disable progress bar
             path_config: None,
             paths_input: paths_input.clone(),

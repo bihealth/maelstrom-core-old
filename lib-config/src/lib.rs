@@ -64,7 +64,7 @@ fn default_stdvcf_apply_filters() -> bool {
     true
 }
 
-fn default_clusvcf_presets_per_tool_pe_sr() -> ClusterSettings {
+fn default_clusvcf_presets_per_tool_pesr() -> ClusterSettings {
     ClusterSettings {
         reciprocal_overlap: 0.1,
         max_bp_distance: Some(300),
@@ -138,8 +138,8 @@ pub struct Config {
     pub stdvcf_apply_filters: bool,
 
     /// Cluster preset for per-tool (PE/SR) aggregation.
-    #[serde(default = "default_clusvcf_presets_per_tool_pe_sr")]
-    pub clusvcf_presets_per_tool_pe_sr: ClusterSettings,
+    #[serde(default = "default_clusvcf_presets_per_tool_pesr")]
+    pub clusvcf_presets_per_tool_pesr: ClusterSettings,
 
     /// Cluster preset for per-tool (DoC) aggregation.
     #[serde(default = "default_clusvcf_presets_per_tool_doc")]

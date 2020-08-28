@@ -13,7 +13,8 @@ use git_version::git_version;
 use log::{debug, error, info, LevelFilter};
 use rust_htslib::{bcf, bcf::Read};
 
-use lib_common::{build_vcf_header, guess_bcf_format, Error};
+use lib_common::bcf::{build_vcf_header, guess_bcf_format};
+use lib_common::error::Error;
 use lib_config::{ClusterSettings, Config};
 
 /// Command line options

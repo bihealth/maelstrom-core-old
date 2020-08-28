@@ -1,0 +1,2 @@
+#contig	start	end	signal
+one	299	379	{"SplitRead":{"read_name":"pair_expected","is_first":false,"contig":"one","start":299,"end":379,"clipped_sides":"Right"}}

@@ -7,10 +7,12 @@ use bloom::{BloomFilter, ASMS};
 use clap::{App, Arg, ArgMatches};
 use git_version::git_version;
 use indicatif::{ProgressBar, ProgressStyle};
-use log::{debug, info, warn, LevelFilter};
+use log::{debug, info, LevelFilter};
 use rust_htslib::{bam, bam::Read};
 
-use lib_common::{guess_bam_format, Error};
+use lib_common::bam::guess_bam_format;
+use lib_common::bam::library::{estimate_library_insert_size, is_interesting, LibraryProperties};
+use lib_common::error::Error;
 use lib_config::Config;
 
 /// Command line options
@@ -44,154 +46,6 @@ impl Options {
             overwrite: matches.occurrences_of("overwrite") > 0,
         })
     }
-}
-
-/// Library properties.
-#[derive(Debug)]
-struct LibraryProperties {
-    /// Maximal read length.
-    max_rlen: i64,
-    /// Median insert size
-    median_isize: f64,
-    /// Inset size standard deviation
-    std_dev_isize: f64,
-    /// Maximal normal insert size
-    max_normal_isize: i64,
-}
-
-/// Estimate the library insert size.
-///
-/// Current main limitation: PE read, no artifact filter.
-fn estimate_library_insert_size(
-    options: &Options,
-    config: &Config,
-) -> Result<LibraryProperties, bam::errors::Error> {
-    info!(
-        "reading {} records to estimate insert size...",
-        config.lib_estimation_sample_size
-    );
-
-    let mut reader = bam::Reader::from_path(&options.path_input)?;
-    let mut insert_sizes = Vec::new();
-    for r in reader.records() {
-        let record = r?;
-        if record.is_paired()
-            && record.is_proper_pair()
-            && record.insert_size() > 0
-            && record.tid() == record.mtid()
-            && !record.is_unmapped()
-            && !record.is_mate_unmapped()
-            && !record.is_secondary()
-            && !record.is_supplementary()
-            && !record.is_quality_check_failed()
-            && !record.is_duplicate()
-        {
-            insert_sizes.push(record.insert_size());
-            if insert_sizes.len() > config.lib_estimation_sample_size {
-                break;
-            }
-        }
-    }
-
-    if insert_sizes.is_empty() {
-        panic!("Found no reads in input file!");
-    } else if insert_sizes.len() < config.lib_estimation_sample_size {
-        warn!(
-            "Only found {} records instead of {}",
-            insert_sizes.len(),
-            config.lib_estimation_sample_size
-        );
-    }
-
-    insert_sizes.sort();
-    let median: f64 = insert_sizes[insert_sizes.len() / 2] as f64;
-    let delta: f64 = config.library_cutoff_deviation * config.library_cutoff_sd_mult * median;
-    let cutoff_max: f64 = median + delta;
-    let cutoff_min: f64 = median - delta;
-    let cutoff_min: f64 = if (cutoff_min < 0.0) || (cutoff_max < cutoff_min) {
-        0.0
-    } else {
-        cutoff_min
-    };
-
-    let mut count = 0;
-    let mut variance: f64 = 0.0;
-    for i in insert_sizes {
-        let i = i as f64;
-        if i >= cutoff_min && i <= cutoff_max {
-            variance += (i - median) * (i - median);
-            count += 1;
-        }
-    }
-    let std_dev = (variance / (count as f64)).sqrt();
-    let max_normal = median + config.lib_estimation_sd_mult * std_dev;
-
-    let result = LibraryProperties {
-        max_rlen: 150, // TODO: fixme
-        median_isize: median,
-        std_dev_isize: std_dev,
-        max_normal_isize: max_normal.ceil() as i64,
-    };
-
-    info!("library properties: {:?}", &result);
-
-    Ok(result)
-}
-
-/// Determine whether the record shows PE or SR signal.
-fn is_interesting(
-    record: &bam::Record,
-    lib_properties: &LibraryProperties,
-    config: &Config,
-) -> bool {
-    // We need to extract the CIGAR information for split read analysis.
-    let cigar = &record.cigar_cached().unwrap();
-
-    // Check for "split read alignment" that is marked as supplementary by BWA-MEM (if
-    // configured, allow having supplementary alignments masked as secondary).
-    if (record.is_supplementary()
-        || (config.supplementary_masked_as_secondary && record.is_secondary()))
-        && (cigar.leading_hardclips() > 0 || cigar.trailing_hardclips() > 0)
-    {
-        return true;
-    }
-
-    // Early exit if not interesting for paired end or split read analysis.
-    if !record.is_paired()
-        || record.is_quality_check_failed()
-        || record.is_duplicate()
-        || record.is_unmapped()
-        || record.is_mate_unmapped()
-        || (!config.supplementary_masked_as_secondary && record.is_secondary())
-    {
-        // Singletons, QC-fail, and duplicate records cannot be properly used, same as pairs with
-        // unaligned reads.  In the future, one-end anchored reads might be considered, though.
-        return false;
-    }
-
-    // Paired read signal is quite easy to identify.
-    if (record.tid() >= 0 && record.mtid() >= 0 && record.tid() != record.mtid())
-        || record.insert_size() > lib_properties.max_normal_isize
-        || record.is_reverse() == record.is_mate_reverse()
-    {
-        // Discordantly aligning pairs are immediately interesting.
-        return true;
-    }
-
-    // Check for split-read anchors (alignment is primary and has sufficient number of
-    // soft-clipped bases).
-    if !record.is_secondary()
-        && !record.is_supplementary()
-        && (cigar.leading_softclips() >= config.min_clipped_bases
-            || cigar.leading_hardclips() >= config.min_clipped_bases
-            || cigar.trailing_softclips() >= config.min_clipped_bases
-            || cigar.trailing_hardclips() >= config.min_clipped_bases)
-    {
-        return true;
-    }
-
-    // Fall-through => not interesting.
-    false
 }
 
 struct ExtractionState {
@@ -312,7 +166,7 @@ fn extract_reads(
         let progress_bar = if options.verbosity == 0 {
             let prog_bar = ProgressBar::new((target_len / 1_000) as u64);
             prog_bar.set_style(ProgressStyle::default_bar()
-                .template("scanning {msg:.green.bold} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {pos:>7}/{len:7} KB {elapsed}/{eta}")
+                .template("scanning {msg:.green.bold} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {pos:>7}/{len:7} Kbp {elapsed}/{eta}")
                 .progress_chars("=>-"));
             prog_bar.set_message(&target_name);
             Some(prog_bar)
@@ -417,8 +271,8 @@ fn main() -> Result<(), Error> {
     info!("options: {:?}", &config);
 
     // Estimate the library insert size.
-    let lib_properties = estimate_library_insert_size(&options, &config)?;
-    // Run the exraction algorithm.
+    let lib_properties = estimate_library_insert_size(&options.path_input, &config)?;
+    // Run the extraction algorithm.
     extract_reads(&options, &config, &lib_properties)?;
 
     info!("All done. Have a nice day!");

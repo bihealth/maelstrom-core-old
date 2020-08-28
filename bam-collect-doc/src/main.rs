@@ -9,7 +9,9 @@ use log::{debug, info, LevelFilter};
 use rust_htslib::{bam, bam::Read, bcf};
 use separator::Separatable;
 
-use lib_common::{build_chroms_bam, guess_bcf_format, samples_from_file, Error};
+use lib_common::bam::{build_chroms_bam, samples_from_file};
+use lib_common::bcf::guess_bcf_format;
+use lib_common::error::Error;
 use lib_config::Config;
 
 mod agg;
@@ -54,7 +56,11 @@ fn build_header(samples: &[String], contigs: &[Interval]) -> bcf::Header {
 
     // Put overall meta information into the BCF header.
     let now = chrono::Utc::now();
-    header.push_record(format!("##fileDate={}", now.format("%Y%m%d").to_string()).as_bytes());
+    if !cfg!(test) {
+        header.push_record(format!("##fileDate={}", now.format("%Y%m%d").to_string()).as_bytes());
+    } else {
+        header.push_record(b"##fileDate=20200828");
+    }
 
     // Add samples to BCF header.
     for sample in samples {

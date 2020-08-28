@@ -8,7 +8,8 @@ use git_version::git_version;
 use log::{debug, info, LevelFilter};
 use rust_htslib::{bam, bam::Read};
 
-use lib_common::{guess_bam_format, Error};
+use lib_common::bam::guess_bam_format;
+use lib_common::error::Error;
 use lib_config::Config;
 
 /// Command line options

@@ -8,7 +8,9 @@ use indicatif::{ProgressBar, ProgressStyle};
 use log::{debug, info, LevelFilter};
 use rust_htslib::{bcf, bcf::Read};
 
-use lib_common::{build_vcf_header, guess_bcf_format, Algorithm, Error};
+use lib_common::bcf::{build_vcf_header, guess_bcf_format};
+use lib_common::error::Error;
+use lib_common::Algorithm;
 use lib_config::Config;
 
 /// Command line options

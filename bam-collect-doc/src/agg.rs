@@ -6,7 +6,8 @@ use lib_config::DepthOfCoverageConfig;
 use rust_htslib::{bam, bam::Read};
 
 use bio_types::genome::{AbstractInterval, Interval};
-use lib_common::{stats::Stats, Error};
+use lib_common::error::Error;
+use lib_common::stats::Stats;
 
 /// Struct for the result in one region (window or target).
 #[derive(Debug)]
@@ -172,7 +173,6 @@ impl BamRecordAggregator for FragmentsAggregator {
             if !reader.read(&mut record)? {
                 break;
             } else {
-                println!("Record...");
                 self.put_bam_record(&record);
             }
         }

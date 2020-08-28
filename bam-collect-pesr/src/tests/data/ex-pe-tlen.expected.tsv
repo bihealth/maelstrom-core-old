@@ -1,0 +1,2 @@
+#contig	start	end	signal
+one	99	199	{"PairedRead":{"read_name":"pair_expected","is_first1":true,"contig1":"one","start1":99,"end1":199,"strand1":"Reverse","contig2":"one","start2":499,"strand2":"Forward","tlen":500}}

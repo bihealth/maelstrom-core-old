@@ -9,6 +9,9 @@ bio-types = "0.7"
 regex = "1"
 rust-htslib = { version = "0.32", features = ["serde"] }
 thiserror = "1"
+log = "0.4"
+lib-config = { path = "../lib-config" }
+
 
 [dev-dependencies]
 matches = "0.1"

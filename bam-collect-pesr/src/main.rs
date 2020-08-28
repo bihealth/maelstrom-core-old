@@ -4,9 +4,15 @@ use std::path::Path;
 
 use clap::{App, Arg, ArgMatches};
 use git_version::git_version;
+use indicatif::{ProgressBar, ProgressStyle};
 use log::{debug, info, LevelFilter};
+use rust_htslib::{bam, bam::Read};
 
-use lib_common::Error;
+use lib_common::bam::library::{
+    estimate_library_insert_size, is_discordant_pair, is_split_read_left, is_split_read_right,
+    LibraryProperties,
+};
+use lib_common::error::Error;
 use lib_config::Config;
 
 /// Command line options
@@ -40,6 +46,256 @@ impl Options {
             overwrite: matches.occurrences_of("overwrite") > 0,
         })
     }
+}
+
+mod read_evidence {
+    use serde::{Deserialize, Serialize};
+    use std::io::prelude::*;
+
+    /// Strand.
+    #[derive(Serialize, Deserialize)]
+    pub enum Strand {
+        Forward,
+        Reverse,
+    }
+
+    /// Sides.
+    #[derive(Serialize, Deserialize)]
+    pub enum Sides {
+        Left,
+        Right,
+        Both,
+        Neither,
+    }
+
+    /// Read pair/split read annotation from one read alignment.
+    #[derive(Serialize, Deserialize)]
+    pub enum Record {
+        /// Paired read based evidence.
+        PairedRead {
+            /// Name of the read pair.
+            read_name: String,
+            /// Whether this alignment is first in pair.
+            is_first1: bool,
+            /// Contig of this alignment.
+            contig1: String,
+            /// Start position on this contig.
+            start1: i64,
+            /// End position on this contig.
+            end1: i64,
+            /// Read orientation in this contig.
+            strand1: Strand,
+            /// Other alignment's contig.
+            contig2: Option<String>,
+            /// Start position on other contig.
+            start2: Option<i64>,
+            /// Strand on other contig.
+            strand2: Option<Strand>,
+            /// Template size.
+            tlen: Option<i64>,
+        },
+        /// Split read based evidence.
+        SplitRead {
+            /// Name of the read pair.
+            read_name: String,
+            /// Whether is first read in this alignment.
+            is_first: bool,
+            /// The alignment's contig.
+            contig: String,
+            /// The alignment's start position.
+            start: i64,
+            /// The alignment's end position.
+            end: i64,
+            /// The side that the read has been clipped on.
+            clipped_sides: Sides,
+        },
+    }
+
+    pub struct Writer {
+        handle: std::fs::File,
+    }
+
+    impl Writer {
+        pub fn from_path(path: &str) -> Result<Self, std::io::Error> {
+            let mut handle = std::fs::File::create(path)?;
+            handle.write_all(b"#contig\tstart\tend\tsignal\n")?;
+            Ok(Self { handle })
+        }
+
+        pub fn write(&mut self, e: &Record) -> Result<(), std::io::Error> {
+            match e {
+                Record::PairedRead {
+                    contig1,
+                    start1,
+                    end1,
+                    ..
+                } => {
+                    self.handle
+                        .write_all(format!("{}\t{}\t{}\t", &contig1, start1, end1).as_bytes())?;
+                }
+                Record::SplitRead {
+                    contig, start, end, ..
+                } => {
+                    self.handle
+                        .write_all(format!("{}\t{}\t{}\t", &contig, start, end).as_bytes())?;
+                }
+            }
+            self.handle
+                .write_all(serde_json::to_string(&e)?.as_bytes())?;
+            self.handle.write_all(b"\n")?;
+
+            Ok(())
+        }
+    }
+}
+
+fn extract_evidence(
+    record: &bam::Record,
+    reader: &bam::IndexedReader,
+    config: &Config,
+    lib_properties: &LibraryProperties,
+) -> Result<Vec<read_evidence::Record>, Error> {
+    let cigar = record.cigar();
+    let mut result = Vec::new();
+
+    let cl = is_split_read_left(record, &cigar, config);
+    let cr = is_split_read_right(record, &cigar, config);
+
+    if cl || cr {
+        result.push(read_evidence::Record::SplitRead {
+            read_name: std::str::from_utf8(record.qname())?.to_string(),
+            is_first: record.is_first_in_template(),
+            contig: std::str::from_utf8(reader.header().tid2name(record.tid() as u32))?.to_string(),
+            start: record.pos(),
+            end: record.cigar().end_pos(),
+            clipped_sides: match (cl, cr) {
+                (true, true) => read_evidence::Sides::Both,
+                (true, false) => read_evidence::Sides::Left,
+                (false, true) => read_evidence::Sides::Right,
+                _ => panic!("clipped record not clipped?"),
+            },
+        })
+    }
+
+    if is_discordant_pair(record, lib_properties) {
+        result.push(read_evidence::Record::PairedRead {
+            read_name: std::str::from_utf8(record.qname())?.to_string(),
+            is_first1: record.is_first_in_template(),
+            contig1: std::str::from_utf8(reader.header().tid2name(record.tid() as u32))?
+                .to_string(),
+            start1: record.pos(),
+            end1: record.cigar().end_pos(),
+            strand1: if record.is_reverse() {
+                read_evidence::Strand::Forward
+            } else {
+                read_evidence::Strand::Reverse
+            },
+            contig2: if record.is_paired() && record.mtid() >= 0 {
+                Some(
+                    std::str::from_utf8(reader.header().tid2name(record.mtid() as u32))?
+                        .to_string(),
+                )
+            } else {
+                None
+            },
+            start2: if record.is_paired() {
+                Some(record.mpos())
+            } else {
+                None
+            },
+            strand2: if record.is_paired() {
+                Some(if record.is_mate_reverse() {
+                    read_evidence::Strand::Forward
+                } else {
+                    read_evidence::Strand::Reverse
+                })
+            } else {
+                None
+            },
+            tlen: if record.is_paired() && record.insert_size() >= 0 {
+                Some(record.insert_size())
+            } else {
+                None
+            },
+        })
+    }
+
+    Ok(result)
+}
+
+/// Perform extraction of paired read/split read signal.
+fn perform_collection(
+    options: &Options,
+    config: &Config,
+    lib_properties: &LibraryProperties,
+) -> Result<(), Error> {
+    // We can handle the paired read/split read signal collection with a single scan.
+    info!("Starting to scan BAM file...");
+
+    // We will scan the BAM file contig wise.
+    let mut reader = bam::IndexedReader::from_path(&options.path_input)?;
+    let target_count = reader.header().target_count() as usize;
+    if config.htslib_io_threads > 0 {
+        reader.set_threads(config.htslib_io_threads)?;
+    }
+
+    // Evidence is written to an extended BED3 file.
+    let mut writer = read_evidence::Writer::from_path(&options.path_output)?;
+
+    for target_id in 0..target_count {
+        let target_name = std::str::from_utf8(reader.header().target_names()[target_id])
+            .unwrap()
+            .to_string();
+        if options.verbosity > 0 {
+            info!(
+                "Starting to scan target #{}/{}: {}",
+                target_id + 1,
+                target_count,
+                &target_name
+            );
+        }
+        let target_len = reader.header().target_len(target_id as u32).unwrap() as i64;
+
+        reader.fetch(target_id as u32, 0, target_len as u64)?;
+
+        let progress_bar =
+            if options.verbosity == 0 {
+                let prog_bar = ProgressBar::new((target_len / 1_000) as u64);
+                prog_bar.set_style(ProgressStyle::default_bar()
+                .template(
+                    "scanning {msg:.green.bold} [{elapsed_precise}] [{wide_bar:.cyan/blue}] \
+                    {pos:>7}/{len:7} Kbp {elapsed}/{eta}")
+                .progress_chars("=>-"));
+                prog_bar.set_message(&target_name);
+                Some(prog_bar)
+            } else {
+                None
+            };
+
+        let mut buffer = bam::Record::new();
+        let mut counter: usize = 0;
+        loop {
+            if !reader.read(&mut buffer)? {
+                break;
+            } else {
+                for evidence in extract_evidence(&buffer, &reader, &config, &lib_properties)? {
+                    writer.write(&evidence)?;
+                }
+
+                counter += 1;
+                if counter % 10_000 == 0 {
+                    if let Some(prog_bar) = &progress_bar {
+                        prog_bar.set_position(buffer.pos() as u64 / 10000);
+                    }
+                }
+            }
+        }
+
+        if let Some(prog_bar) = &progress_bar {
+            prog_bar.finish();
+        }
+    }
+    Ok(())
 }
 
 fn main() -> Result<(), Error> {
@@ -95,7 +351,127 @@ fn main() -> Result<(), Error> {
     };
     info!("options: {:?}", &config);
 
+    // Estimate the library insert size.
+    let lib_properties = estimate_library_insert_size(&options.path_input, &config)?;
+    // Run the collection algorithm.
+    perform_collection(&options, &config, &lib_properties)?;
+
     info!("All done. Have a nice day!");
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use pretty_assertions::assert_eq;
+    use std::fs;
+    use tempdir::TempDir;
+
+    /// Helper that runs `perform_collection()` and compares the result.
+    fn _perform_collection_and_test(
+        tmp_dir: &TempDir,
+        path_input: &str,
+        path_expected: &str,
+    ) -> Result<(), super::Error> {
+        let path_output = String::from(tmp_dir.path().join("out.tsv").to_str().unwrap());
+        let options = super::Options {
+            verbosity: 1, // disable progress bar
+            path_config: None,
+            path_input: String::from(path_input),
+            path_output: path_output.clone(),
+            overwrite: false,
+        };
+        let config: super::Config = toml::from_str("").unwrap();
+        let library_properties = super::LibraryProperties {
+            max_rlen: 100,
+            median_isize: 300.0,
+            std_dev_isize: 10.0,
+            max_normal_isize: 330,
+        };
+
+        super::perform_collection(&options, &config, &library_properties)?;
+
+        assert_eq!(
+            fs::read_to_string(path_expected).unwrap(),
+            fs::read_to_string(&path_output).unwrap()
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn identify_pairs_by_hard_clipping_leading() -> Result<(), super::Error> {
+        let tmp_dir = TempDir::new("tests")?;
+        _perform_collection_and_test(
+            &tmp_dir,
+            "./src/tests/data/ex-pe-hard-leading.sorted.bam",
+            "./src/tests/data/ex-pe-hard-leading.expected.tsv",
+        )?;
+        Ok(())
+    }
+
+    #[test]
+    fn identify_pairs_by_hard_clipping_trailing() -> Result<(), super::Error> {
+        let tmp_dir = TempDir::new("tests")?;
+        _perform_collection_and_test(
+            &tmp_dir,
+            "./src/tests/data/ex-pe-hard-trailing.sorted.bam",
+            "./src/tests/data/ex-pe-hard-trailing.expected.tsv",
+        )?;
+        Ok(())
+    }
+
+    #[test]
+    fn identify_pairs_by_soft_clipping_negative() -> Result<(), super::Error> {
+        let tmp_dir = TempDir::new("tests")?;
+        _perform_collection_and_test(
+            &tmp_dir,
+            "./src/tests/data/ex-pe-soft-neg.sorted.bam",
+            "./src/tests/data/ex-pe-soft-neg.expected.tsv",
+        )?;
+        Ok(())
+    }
+    #[test]
+    fn identify_pairs_by_soft_clipping_positive() -> Result<(), super::Error> {
+        let tmp_dir = TempDir::new("tests")?;
+        _perform_collection_and_test(
+            &tmp_dir,
+            "./src/tests/data/ex-pe-soft-pos.sorted.bam",
+            "./src/tests/data/ex-pe-soft-pos.expected.tsv",
+        )?;
+        Ok(())
+    }
+
+    #[test]
+    fn identify_pairs_by_different_tid() -> Result<(), super::Error> {
+        let tmp_dir = TempDir::new("tests")?;
+        _perform_collection_and_test(
+            &tmp_dir,
+            "./src/tests/data/ex-pe-tid.sorted.bam",
+            "./src/tests/data/ex-pe-tid.expected.tsv",
+        )?;
+        Ok(())
+    }
+
+    #[test]
+    fn identify_pairs_by_large_tlen() -> Result<(), super::Error> {
+        let tmp_dir = TempDir::new("tests")?;
+        _perform_collection_and_test(
+            &tmp_dir,
+            "./src/tests/data/ex-pe-tlen.sorted.bam",
+            "./src/tests/data/ex-pe-tlen.expected.tsv",
+        )?;
+        Ok(())
+    }
+
+    #[test]
+    fn identify_pairs_by_orientation() -> Result<(), super::Error> {
+        let tmp_dir = TempDir::new("tests")?;
+        _perform_collection_and_test(
+            &tmp_dir,
+            "./src/tests/data/ex-pe-orient.sorted.bam",
+            "./src/tests/data/ex-pe-orient.expected.tsv",
+        )?;
+        Ok(())
+    }
 }

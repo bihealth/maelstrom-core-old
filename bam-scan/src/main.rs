@@ -93,7 +93,7 @@ fn estimate_library_insert_size(
         }
     }
 
-    if insert_sizes.len() == 0 {
+    if insert_sizes.is_empty() {
         panic!("Found no reads in input file!");
     } else if insert_sizes.len() < config.lib_estimation_sample_size {
         warn!(
@@ -180,51 +180,57 @@ fn is_interesting(
 
     // Check for split-read anchors (alignment is primary and has sufficient number of
     // soft-clipped bases).
-    if !record.is_secondary() && !record.is_supplementary() {
-        if cigar.leading_softclips() >= config.min_clipped_bases
+    if !record.is_secondary()
+        && !record.is_supplementary()
+        && (cigar.leading_softclips() >= config.min_clipped_bases
             || cigar.leading_hardclips() >= config.min_clipped_bases
             || cigar.trailing_softclips() >= config.min_clipped_bases
-            || cigar.trailing_hardclips() >= config.min_clipped_bases
-        {
-            return true;
-        }
+            || cigar.trailing_hardclips() >= config.min_clipped_bases)
+    {
+        return true;
     }
 
     // Fall-through => not interesting.
     false
 }
 
+struct ExtractionState {
+    buffer: bam::RecordBuffer,
+    writer: bam::Writer,
+    bloom: BloomFilter,
+}
+
 /// Extract reads from the buffer in the current window.
 fn extract_reads_from_current_window(
     progress_bar: &Option<ProgressBar>,
-    buffer: &mut bam::RecordBuffer,
+    state: &mut ExtractionState,
     window_end: i64,
-    writer: &mut bam::Writer,
-    bloom: &mut BloomFilter,
     config: &Config,
     lib_properties: &LibraryProperties,
     pass: i32,
 ) -> Result<(), Error> {
     let mut pos = 0;
-    for record in buffer.iter() {
+    for record in state.buffer.iter() {
         pos = record.pos();
         if pos > window_end {
             break;
         }
-        if bloom.contains(&record.qname()) || is_interesting(&record, &lib_properties, &config) {
+        if state.bloom.contains(&record.qname())
+            || is_interesting(&record, &lib_properties, &config)
+        {
             debug!(
                 "Writing {}/{}",
                 str::from_utf8(&record.qname()).unwrap(),
                 record.is_first_in_template()
             );
-            writer.write(&record)?;
-            bloom.insert(&record.qname());
+            state.writer.write(&record)?;
+            state.bloom.insert(&record.qname());
         }
     }
 
-    if let Some(bar) = progress_bar {
+    if let Some(prog_bar) = progress_bar {
         if pass == 2 && pos >= 0 {
-            bar.set_position((pos / 1_000) as u64);
+            prog_bar.set_position((pos / 1_000) as u64);
         }
     }
 
@@ -237,12 +243,6 @@ fn extract_reads(
     config: &Config,
     lib_properties: &LibraryProperties,
 ) -> Result<(), Error> {
-    // Construct bloom filter; used for collecting reads to read.
-    let mut bloom = BloomFilter::with_rate(
-        config.bloom_false_positive_rate,
-        config.bloom_expected_read_count,
-    );
-
     // We will fetch records from window of size buffer_length into a bam::RecordBuffer and shift
     // the window with a span of of window_overlap.  This will ensure that all records with a
     // normal insert size are within the same window.
@@ -260,14 +260,12 @@ fn extract_reads(
     let mut header = bam::Header::new();
     for header_line in std::str::from_utf8(reader.header().as_bytes())
         .unwrap()
-        .split("\n")
+        .split('\n')
     {
-        if header_line.len() > 0 {
+        if !header_line.is_empty() {
             let header_line = String::from(header_line);
             if header_line.starts_with("@HD") {
-                header.push_record(&bam::header::HeaderRecord::new(
-                    "HD\tVN:1.6\tSO:unordered".as_bytes(),
-                ));
+                header.push_record(&bam::header::HeaderRecord::new(b"HD\tVN:1.6\tSO:unordered"));
             } else if header_line.starts_with("@CO") {
                 header.push_comment(header_line[4..].as_bytes());
             } else {
@@ -287,7 +285,15 @@ fn extract_reads(
         reader.set_threads(config.htslib_io_threads)?;
         writer.set_threads(config.htslib_io_threads)?;
     }
-    let mut buffer = bam::RecordBuffer::new(reader, true);
+
+    let mut state = ExtractionState {
+        writer,
+        buffer: bam::RecordBuffer::new(reader, true),
+        bloom: BloomFilter::with_rate(
+            config.bloom_false_positive_rate,
+            config.bloom_expected_read_count,
+        ),
+    };
 
     for target_id in 0..target_count {
         let target_name = str::from_utf8(header_view.target_names()[target_id]).unwrap();
@@ -304,12 +310,12 @@ fn extract_reads(
         let mut window_no = 0;
 
         let progress_bar = if options.verbosity == 0 {
-            let bar = ProgressBar::new((target_len / 1_000) as u64);
-            bar.set_style(ProgressStyle::default_bar()
+            let prog_bar = ProgressBar::new((target_len / 1_000) as u64);
+            prog_bar.set_style(ProgressStyle::default_bar()
                 .template("scanning {msg:.green.bold} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {pos:>7}/{len:7} KB {elapsed}/{eta}")
                 .progress_chars("=>-"));
-            bar.set_message(&target_name);
-            Some(bar)
+            prog_bar.set_message(&target_name);
+            Some(prog_bar)
         } else {
             None
         };
@@ -332,14 +338,14 @@ fn extract_reads(
                     window_end
                 );
             }
-            buffer.fetch(target_name, window_start as u64, window_end as u64)?;
+            state
+                .buffer
+                .fetch(target_name, window_start as u64, window_end as u64)?;
             for pass in 1..=2 {
                 extract_reads_from_current_window(
                     &progress_bar,
-                    &mut buffer,
+                    &mut state,
                     window_end,
-                    &mut writer,
-                    &mut bloom,
                     &config,
                     &lib_properties,
                     pass,
@@ -348,8 +354,8 @@ fn extract_reads(
             window_no += 1;
         }
 
-        if let Some(bar) = progress_bar {
-            bar.finish();
+        if let Some(prog_bar) = progress_bar {
+            prog_bar.finish();
         }
     }
 

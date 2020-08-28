@@ -76,20 +76,20 @@ pub struct BcfFormatInfo {
 /// Return `bcf::Format` for the given filename.
 pub fn guess_bcf_format(filename: &str) -> BcfFormatInfo {
     if filename.ends_with(".bcf") {
-        return BcfFormatInfo {
+        BcfFormatInfo {
             format: bcf::Format::BCF,
             uncompressed: false,
-        };
+        }
     } else if filename.ends_with(".vcf.gz") {
-        return BcfFormatInfo {
+        BcfFormatInfo {
             format: bcf::Format::VCF,
             uncompressed: false,
-        };
+        }
     } else {
-        return BcfFormatInfo {
+        BcfFormatInfo {
             format: bcf::Format::VCF,
             uncompressed: true,
-        };
+        }
     }
 }
 
@@ -99,22 +99,19 @@ pub fn build_vcf_header(template: &bcf::header::HeaderView) -> Result<bcf::Heade
 
     // Copy over sequence records.
     for record in template.header_records() {
-        match record {
-            bcf::header::HeaderRecord::Contig { key: _, values } => {
-                header.push_record(
-                    format!(
-                        "##contig=<ID={},length={}>",
-                        values
-                            .get("ID")
-                            .expect("source contig header does not have ID"),
-                        values
-                            .get("length")
-                            .expect("source contig header does not have length")
-                    )
-                    .as_bytes(),
-                );
-            }
-            _ => (),
+        if let bcf::header::HeaderRecord::Contig { key: _, values } = record {
+            header.push_record(
+                format!(
+                    "##contig=<ID={},length={}>",
+                    values
+                        .get("ID")
+                        .expect("source contig header does not have ID"),
+                    values
+                        .get("length")
+                        .expect("source contig header does not have length")
+                )
+                .as_bytes(),
+            );
         }
     }
 
@@ -197,11 +194,11 @@ pub fn build_chroms_bam(
 
 /// Parse @RG lane into triple (id, sm).
 fn parse_line_rg(line: String) -> Option<(String, String)> {
-    let line_split = line.split("\t");
+    let line_split = line.split('\t');
     let mut id: Option<String> = None;
     let mut sm: Option<String> = None;
     for s in line_split {
-        let token: Vec<&str> = s.split(":").collect();
+        let token: Vec<&str> = s.split(':').collect();
         if token.len() >= 2 {
             match token[0] {
                 "ID" => {
@@ -222,19 +219,16 @@ fn parse_line_rg(line: String) -> Option<(String, String)> {
 }
 
 /// Construct sample list from BAM header.
-fn samples_from_header(header: &Vec<u8>) -> Vec<String> {
+fn samples_from_header(header: &[u8]) -> Vec<String> {
     let text = String::from_utf8(header.to_vec()).unwrap();
     let mut samples = Vec::new();
 
     for line in text.lines() {
         if line.starts_with("@RG") {
-            match parse_line_rg(line.to_string()) {
-                Some((_id, sm)) => {
-                    if !samples.contains(&sm) {
-                        samples.push(sm.clone());
-                    }
+            if let Some((_id, sm)) = parse_line_rg(line.to_string()) {
+                if !samples.contains(&sm) {
+                    samples.push(sm.clone());
                 }
-                None => (),
             }
         }
     }

@@ -89,7 +89,7 @@ impl FragmentsAggregator {
         let num_bins = (contig_length + base.config.window_length - 1) / base.config.window_length;
 
         FragmentsAggregator {
-            base: base,
+            base,
             counters: vec![0; contig_length],
             mapq_sums: vec![0; num_bins],
         }

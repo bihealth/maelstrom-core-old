@@ -49,7 +49,7 @@ impl Options {
 }
 
 /// Build header for the coverage output BCF file.
-fn build_header(samples: &Vec<String>, contigs: &Vec<Interval>) -> bcf::Header {
+fn build_header(samples: &[String], contigs: &[Interval]) -> bcf::Header {
     let mut header = bcf::Header::new();
 
     // Put overall meta information into the BCF header.
@@ -99,9 +99,9 @@ fn build_header(samples: &Vec<String>, contigs: &Vec<Interval>) -> bcf::Header {
 
 /// Build bcf::Writer with appropriate header.
 fn build_bcf_writer(
-    path: &String,
-    samples: &Vec<String>,
-    contigs: &Vec<Interval>,
+    path: &str,
+    samples: &[String],
+    contigs: &[Interval],
 ) -> Result<bcf::Writer, Error> {
     let guessed = guess_bcf_format(&path);
 

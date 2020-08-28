@@ -113,12 +113,12 @@ fn summarize_record(
         dst.push_info_integer(b"SVLEN", &[end2 - (src.pos() as i32)])?;
     }
     // INFO/ALGORITHMS
-    dst.push_info_string(b"ALGORITHMS", &["delly".as_bytes()])?;
+    dst.push_info_string(b"ALGORITHMS", &[b"delly"])?;
 
     // FORMAT/GT
     let sample_count = dst_header.sample_count() as usize;
     let mut gts: Vec<i32> = Vec::new();
-    Vec::from(src.format(b"GT").integer()?)[..sample_count]
+    src.format(b"GT").integer()?[..sample_count]
         .iter()
         .for_each(|xs| gts.extend_from_slice(xs));
     dst.push_format_integer(b"GT", &gts)?;
@@ -167,7 +167,7 @@ fn perform_extraction(options: &Options, config: &Config) -> Result<(), Error> {
         .template("{prefix:.bold.dim} {spinner} {msg} {elapsed}");
     let spinner = if options.verbosity == 0 {
         let spinner = ProgressBar::new_spinner();
-        spinner.set_style(spinner_style.clone());
+        spinner.set_style(spinner_style);
         spinner.enable_steady_tick(100);
         Some(spinner)
     } else {

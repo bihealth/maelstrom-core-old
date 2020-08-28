@@ -39,7 +39,7 @@ impl Options {
             verbosity: matches.occurrences_of("v"),
             path_config: matches.value_of("config").map(|s| s.to_string()),
             paths_input: match matches.values_of("input") {
-                Some(xs) => xs.map(|x| String::from(x)).collect(),
+                Some(xs) => xs.map(String::from).collect(),
                 None => return Err(Error::OptionMissing()),
             },
             path_output: match matches.value_of("output") {
@@ -181,7 +181,7 @@ impl StandardizedRecord {
                         .join("-")
                 })
                 .collect(),
-            called_by: called_by,
+            called_by,
         })
     }
 
@@ -206,6 +206,7 @@ impl StandardizedRecord {
 
 fn overlap(lhs: &std::ops::Range<i64>, rhs: &std::ops::Range<i64>) -> std::ops::Range<i64> {
     if lhs.end <= rhs.start || rhs.end <= lhs.start {
+        #[allow(clippy::reversed_empty_ranges)]
         std::ops::Range { start: 0, end: 0 }
     } else {
         std::ops::Range {
@@ -229,7 +230,7 @@ fn collect_contigs(reader: &bcf::IndexedReader) -> Result<Vec<String>, Error> {
 }
 
 /// Check contigs between all input files.
-fn check_contigs(paths_input: &Vec<String>) -> Result<(), Error> {
+fn check_contigs(paths_input: &[String]) -> Result<(), Error> {
     info!("Checking input files for having contigs...");
     if paths_input.is_empty() {
         error!("No input files given (you should never reach here)!");
@@ -259,7 +260,7 @@ fn load_std_records(path: &str, contig_name: &str) -> Result<Vec<StandardizedRec
     let mut record = reader.empty_record();
 
     let rid = reader.header().name2rid(contig_name.as_bytes())?;
-    if let Ok(_) = reader.fetch(rid, 0, 1_000_000_000) {
+    if reader.fetch(rid, 0, 1_000_000_000).is_ok() {
         loop {
             if !reader.read(&mut record)? {
                 break; // done
@@ -328,29 +329,30 @@ fn is_overlap_okay(
         }
     }
     debug!("Overlap!");
-    return true;
+
+    true
 }
 
 /// Cluster the SVs (all are assumed to be on the same contig).
 fn cluster_records(
     options: &Options,
     config: &Config,
-    records: &Vec<StandardizedRecord>,
+    records: &[StandardizedRecord],
 ) -> Result<Vec<StandardizedRecord>, Error> {
     let mut result = Vec::new();
 
     let cluster_settings = match options.setting.as_str() {
         "per_tool_pesr" => config.clusvcf_presets_per_tool_pesr.clone(),
         "per_tool_doc" => config.clusvcf_presets_per_tool_doc.clone(),
-        _ => Err(Error::UnknownClusterSettingName())?,
+        _ => return Err(Error::UnknownClusterSettingName()),
     };
 
-    for sv_type in vec!["DEL", "DUP", "INV", "BND"] {
+    for sv_type in &["DEL", "DUP", "INV", "BND"] {
         // Build interval tree for efficient overlap detection.
         let mut ids = Vec::new();
         let mut tree = IntervalTree::new();
         for (i, record) in records.iter().enumerate() {
-            if record.sv_type == sv_type {
+            if record.sv_type == *sv_type {
                 tree.insert(
                     record.extended_interval(cluster_settings.max_bp_distance.unwrap_or(0)),
                     ids.len(),
@@ -377,13 +379,12 @@ fn cluster_records(
 
         // Gather clusters of record ids.
         let mut cluster: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
-        for record_idx in 0..ids.len() {
+        for (record_idx, record_id) in ids.iter().enumerate() {
             let set_id = uf.find(record_idx);
-            if !cluster.contains_key(&set_id) {
-                cluster.insert(set_id, vec![ids[record_idx]]);
-            } else {
-                cluster.get_mut(&set_id).unwrap().push(ids[record_idx]);
-            }
+            cluster
+                .entry(set_id)
+                .or_insert_with(Vec::new)
+                .push(*record_id);
         }
 
         // Collapse each cluster.
@@ -410,8 +411,8 @@ fn cluster_records(
                 for (l_idx, sample) in l_record.samples.iter().enumerate() {
                     if let Some(&idx) = sample_idx.get(sample) {
                         record.gts[idx] = match std::cmp::max(
-                            record.gts[idx].matches("1").count(),
-                            l_record.gts[l_idx].matches("1").count(),
+                            record.gts[idx].matches('1').count(),
+                            l_record.gts[l_idx].matches('1').count(),
                         ) {
                             0 => "0/0".to_string(),
                             1 => "0/1".to_string(),
@@ -438,7 +439,7 @@ fn cluster_records(
             } else {
                 (pos[pos.len() / 2] + pos[pos.len() / 2 - 1]) / 2
             };
-            if sv_type == "BND" {
+            if *sv_type == "BND" {
                 record.end2 = record.pos + 1;
                 record.sv_len = -1;
             } else {
@@ -463,7 +464,7 @@ fn cluster_records(
 }
 
 /// Write out clustered records.
-fn write_records(records: &Vec<StandardizedRecord>, writer: &mut bcf::Writer) -> Result<(), Error> {
+fn write_records(records: &[StandardizedRecord], writer: &mut bcf::Writer) -> Result<(), Error> {
     let sample_count = writer.header().sample_count();
 
     for r in records {
@@ -494,8 +495,8 @@ fn write_records(records: &Vec<StandardizedRecord>, writer: &mut bcf::Writer) ->
         for (i, sample) in r.samples.iter().enumerate() {
             let sample_idx = *writer.header().sample_to_id(sample.as_bytes())? as usize;
 
-            genotypes[2 * sample_idx] = (r.gts[i].starts_with("1") as i32 + 1) << 1;
-            genotypes[2 * sample_idx + 1] = (r.gts[i].ends_with("1") as i32 + 1) << 1;
+            genotypes[2 * sample_idx] = (r.gts[i].starts_with('1') as i32 + 1) << 1;
+            genotypes[2 * sample_idx + 1] = (r.gts[i].ends_with('1') as i32 + 1) << 1;
             for algorithm in &r.called_by[i] {
                 if let Some(arr) = called_by.get_mut(algorithm) {
                     arr[sample_idx] = 1;
@@ -506,7 +507,6 @@ fn write_records(records: &Vec<StandardizedRecord>, writer: &mut bcf::Writer) ->
         // Write FORMAT fields into output record.
         record
             .push_format_integer(b"GT", &genotypes)
-            .ok()
             .expect("could not write genotype");
         for (algorithm, is_called) in &called_by {
             record.push_format_integer(algorithm.as_bytes(), &is_called)?;

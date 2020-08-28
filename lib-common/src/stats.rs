@@ -22,7 +22,7 @@ fn local_cmp(x: f64, y: f64) -> Ordering {
         Greater
     } else if x < y {
         Less
-    } else if x == y {
+    } else if (x - y).abs() < 1e-6 {
         Equal
     } else {
         Greater
@@ -212,7 +212,7 @@ impl Stats for [f64] {
     }
 
     fn median(&self) -> f64 {
-        self.percentile(50 as f64)
+        self.percentile(50_f64)
     }
 
     fn var(&self) -> f64 {
@@ -223,7 +223,7 @@ impl Stats for [f64] {
             let mut v: f64 = 0.0;
             for s in self {
                 let x = *s - mean;
-                v = v + x * x;
+                v += x * x;
             }
             // NB: this is _supposed to be_ len-1, not len. If you
             // change it back to len, you will be calculating a
@@ -238,7 +238,7 @@ impl Stats for [f64] {
     }
 
     fn std_dev_pct(&self) -> f64 {
-        let hundred = 100 as f64;
+        let hundred = 100_f64;
         (self.std_dev() / self.mean()) * hundred
     }
 
@@ -252,7 +252,7 @@ impl Stats for [f64] {
     }
 
     fn median_abs_dev_pct(&self) -> f64 {
-        let hundred = 100 as f64;
+        let hundred = 100_f64;
         (self.median_abs_dev() / self.median()) * hundred
     }
 
@@ -291,7 +291,7 @@ fn percentile_of_sorted(sorted_samples: &[f64], pct: f64) -> f64 {
     assert!(zero <= pct);
     let hundred = 100f64;
     assert!(pct <= hundred);
-    if pct == hundred {
+    if (pct - hundred).abs() < 1e-6 {
         return sorted_samples[sorted_samples.len() - 1];
     }
     let length = (sorted_samples.len() - 1) as f64;
@@ -316,7 +316,7 @@ pub fn winsorize(samples: &mut [f64], pct: f64) {
     let mut tmp = samples.to_vec();
     local_sort(&mut tmp);
     let lo = percentile_of_sorted(&tmp, pct);
-    let hundred = 100 as f64;
+    let hundred = 100_f64;
     let hi = percentile_of_sorted(&tmp, hundred - pct);
     for samp in samples {
         if *samp > hi {
@@ -354,7 +354,7 @@ mod tests {
 
         let mut w = io::sink();
         let w = &mut w;
-        (write!(w, "\n")).unwrap();
+        (writeln!(w)).unwrap();
 
         assert_eq!(summ.sum, summ2.sum);
         assert_eq!(summ.min, summ2.min);

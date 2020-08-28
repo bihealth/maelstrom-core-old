@@ -62,10 +62,7 @@ impl RecordIdentifier {
 }
 
 /// Write unique reads from chunk into the writer.
-fn write_unique(
-    chunk: &Vec<bam::Record>,
-    writer: &mut bam::Writer,
-) -> Result<(), bam::errors::Error> {
+fn write_unique(chunk: &[bam::Record], writer: &mut bam::Writer) -> Result<(), bam::errors::Error> {
     let mut seen = HashSet::new();
 
     for record in chunk.iter() {

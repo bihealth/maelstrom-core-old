@@ -44,7 +44,7 @@ impl Options {
 
 fn main() -> Result<(), Error> {
     // Setup command line parser and parse options.
-    let matches = App::new("snappysv-bam-collect-doc")
+    let matches = App::new("snappysv-bam-collect-pesr")
         .version(git_version!())
         .author("Manuel Holtgrewe <manuel.holtgrewe@bihealth.de>")
         .about("Collect paired end and split read evidence from BAM")
@@ -81,7 +81,7 @@ fn main() -> Result<(), Error> {
         .chain(std::io::stderr())
         .apply()
         .unwrap();
-    info!("Starting snappysv-bam-collect-doc");
+    info!("Starting snappysv-bam-collect-pesr");
     info!("options: {:?}", &options);
 
     // Parse further settings from configuration file.

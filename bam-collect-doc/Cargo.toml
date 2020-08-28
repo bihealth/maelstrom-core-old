@@ -5,6 +5,8 @@ authors = ["Manuel Holtgrewe <manuel.holtgrewe@bihealth.de>"]
 edition = "2018"
 
 [dependencies]
+bio = "0.32"
+bio-types = "0.7"
 indicatif = "0.15"
 rust-htslib = { version = "0.32", features = ["serde"] }
 git-version = "0.3"
@@ -14,6 +16,7 @@ chrono = "0.4"
 clap = "2.33"
 lib-common = { path = "../lib-common" }
 lib-config = { path = "../lib-config" }
+separator = "0.4.1"
 thiserror = "1"
 toml = "0.5"
 

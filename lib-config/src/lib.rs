@@ -1,18 +1,70 @@
 /// lib-config -- shared configuration.
 use serde::Deserialize;
 
-/// Clustering configuration for clusvcf.
+fn default_min_mapq() -> Option<u8> {
+    Some(0)
+}
+fn default_min_unclipped() -> Option<f32> {
+    Some(0.6)
+}
+fn default_count_kind() -> String {
+    String::from("coverage")
+}
+fn default_window_length() -> usize {
+    100
+}
+
+/// Configuration for bam-collect-doc.
+#[derive(Deserialize, Debug, Clone)]
+pub struct DepthOfCoverageConfig {
+    /// Minimal MAPQ value for an alignment to be considered.
+    #[serde(default = "default_min_mapq")]
+    pub min_mapq: Option<u8>,
+    /// Minimal proportion of unclipped bases for an alignment to be considered.
+    #[serde(default = "default_min_unclipped")]
+    pub min_unclipped: Option<f32>,
+    /// The counts to generate, one of "coverage", and "fragments".
+    #[serde(default = "default_count_kind")]
+    pub count_kind: String,
+    /// The window length,
+    #[serde(default = "default_window_length")]
+    pub window_length: usize,
+}
+
+fn default_reciprocal_overlap() -> f32 {
+    0.8
+}
+fn default_max_bp_distance() -> Option<i64> {
+    Some(300)
+}
+fn default_match_strands() -> bool {
+    true
+}
+fn default_match_sv_type() -> bool {
+    true
+}
+
+fn default_sample_overlap() -> Option<f32> {
+    Some(0.5)
+}
+
+/// Clustering configuration for vcf-cluster.
 #[derive(Deserialize, Debug, Clone)]
 pub struct ClusterSettings {
     /// Reciprocal overlap by size.
+    #[serde(default = "default_reciprocal_overlap")]
     pub reciprocal_overlap: f32,
     /// Maximal breakpoint distance.
+    #[serde(default = "default_max_bp_distance")]
     pub max_bp_distance: Option<i64>,
     /// Require strands to match.
+    #[serde(default = "default_match_strands")]
     pub match_strands: bool,
     /// Require sv_type to match.
+    #[serde(default = "default_match_sv_type")]
     pub match_sv_type: bool,
     /// Sample overlap to require, if any.
+    #[serde(default = "default_sample_overlap")]
     pub sample_overlap: Option<f32>,
 }
 
@@ -84,6 +136,15 @@ fn default_clusvcf_presets_per_tool_doc() -> ClusterSettings {
     }
 }
 
+fn default_collect_doc_config() -> DepthOfCoverageConfig {
+    DepthOfCoverageConfig {
+        min_mapq: default_min_mapq(),
+        min_unclipped: default_min_unclipped(),
+        window_length: default_window_length(),
+        count_kind: default_count_kind(),
+    }
+}
+
 /// Program configuration, from config file.
 #[derive(Deserialize, Debug, Clone)]
 pub struct Config {
@@ -144,4 +205,8 @@ pub struct Config {
     /// Cluster preset for per-tool (DoC) aggregation.
     #[serde(default = "default_clusvcf_presets_per_tool_doc")]
     pub clusvcf_presets_per_tool_doc: ClusterSettings,
+
+    /// Preset for depth of coverage extraction.
+    #[serde(default = "default_collect_doc_config")]
+    pub collect_doc_config: DepthOfCoverageConfig,
 }

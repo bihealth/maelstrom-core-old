@@ -5,6 +5,8 @@ authors = ["Manuel Holtgrewe <manuel.holtgrewe@bihealth.de>"]
 edition = "2018"
 
 [dependencies]
+bio-types = "0.7"
+regex = "1"
 rust-htslib = { version = "0.32", features = ["serde"] }
 thiserror = "1"
 

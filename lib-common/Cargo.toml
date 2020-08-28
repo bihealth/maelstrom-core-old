@@ -6,6 +6,7 @@ edition = "2018"
 
 [dependencies]
 rust-htslib = { version = "0.32", features = ["serde"] }
+thiserror = "1"
 
 [dev-dependencies]
 matches = "0.1"

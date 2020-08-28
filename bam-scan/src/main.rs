@@ -10,32 +10,8 @@ use indicatif::{ProgressBar, ProgressStyle};
 use log::{debug, info, warn, LevelFilter};
 use rust_htslib::{bam, bam::Read};
 
-use lib_common::guess_bam_format;
+use lib_common::{guess_bam_format, Error};
 use lib_config::Config;
-
-/// Global error type.
-#[derive(thiserror::Error, Debug)]
-enum Error {
-    /// A command line option is missing.
-    #[error("missing command line argument")]
-    OptionMissing(),
-    /// The output file already exists.
-    #[error("output file already exists")]
-    OutputFileExists(),
-    /// Problem with file I/O.
-    #[error("problem with I/O")]
-    Io {
-        #[from]
-        source: std::io::Error,
-        // TODO: add experimental backtrace feature?
-    },
-    /// Problem with htslib
-    #[error("problem with BAM file access")]
-    Htslib {
-        #[from]
-        source: bam::errors::Error, // TODO: add experimental backtrace feature?
-    },
-}
 
 /// Command line options
 #[derive(Debug)]

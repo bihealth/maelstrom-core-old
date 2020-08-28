@@ -8,38 +8,8 @@ use indicatif::{ProgressBar, ProgressStyle};
 use log::{debug, info, LevelFilter};
 use rust_htslib::{bcf, bcf::Read};
 
-use lib_common::{build_vcf_header, guess_bcf_format, Algorithm};
+use lib_common::{build_vcf_header, guess_bcf_format, Algorithm, Error};
 use lib_config::Config;
-
-/// Global error type.
-#[derive(thiserror::Error, Debug)]
-enum Error {
-    /// A command line option is missing.
-    #[error("missing command line argument")]
-    OptionMissing(),
-    /// The output file already exists.
-    #[error("output file already exists")]
-    OutputFileExists(),
-    /// Problem with file I/O.
-    #[error("problem with I/O")]
-    Io {
-        #[from]
-        source: std::io::Error,
-        // TODO: add experimental backtrace feature?
-    },
-    /// Problem with htslib
-    #[error("problem with BCF file access")]
-    Htslib {
-        #[from]
-        source: bcf::errors::Error, // TODO: add experimental backtrace feature?
-    },
-    /// Problem with string conversion
-    #[error("problem with string conversion")]
-    Utf8Error {
-        #[from]
-        source: std::str::Utf8Error, // TODO: add experimental backtrace feature?
-    },
-}
 
 /// Command line options
 #[derive(Debug)]

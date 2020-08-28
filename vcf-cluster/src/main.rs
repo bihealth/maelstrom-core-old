@@ -13,50 +13,8 @@ use git_version::git_version;
 use log::{debug, error, info, LevelFilter};
 use rust_htslib::{bcf, bcf::Read};
 
-use lib_common::{build_vcf_header, guess_bcf_format};
+use lib_common::{build_vcf_header, guess_bcf_format, Error};
 use lib_config::{ClusterSettings, Config};
-
-/// Global error type.
-#[derive(thiserror::Error, Debug)]
-enum Error {
-    /// A command line option is missing.
-    #[error("missing command line argument")]
-    OptionMissing(),
-    /// Inconsistent input files.
-    #[error("inconsistent input files")]
-    InconsistentInput(),
-    /// The output file already exists.
-    #[error("output file already exists")]
-    OutputFileExists(),
-    /// Incorrect cluster setting name.
-    #[error("unknown cluster setting name")]
-    UnknownClusterSettingName(),
-    /// Problem with file I/O.
-    #[error("problem with I/O")]
-    Io {
-        #[from]
-        source: std::io::Error,
-        // TODO: add experimental backtrace feature?
-    },
-    /// Problem with htslib
-    #[error("problem with BCF file access")]
-    Htslib {
-        #[from]
-        source: bcf::errors::Error, // TODO: add experimental backtrace feature?
-    },
-    /// Problem with string conversion
-    #[error("problem with string conversion")]
-    StrUtf8Error {
-        #[from]
-        source: std::str::Utf8Error, // TODO: add experimental backtrace feature?
-    },
-    /// Problem with string conversion
-    #[error("problem with string conversion")]
-    StringUtf8Error {
-        #[from]
-        source: std::string::FromUtf8Error, // TODO: add experimental backtrace feature?
-    },
-}
 
 /// Command line options
 #[derive(Debug)]

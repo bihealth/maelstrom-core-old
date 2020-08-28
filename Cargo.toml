@@ -2,6 +2,8 @@
 members = [
     "bam-scan",
     "bam-unique",
+    "bam-collect-doc",
+    "bam-collect-pesr",
     "lib-common",
     "lib-config",
     "vcf-cluster",

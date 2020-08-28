@@ -1,0 +1,22 @@
+[package]
+name = "snappysv-bam-collect-doc"
+version = "0.1.0"
+authors = ["Manuel Holtgrewe <manuel.holtgrewe@bihealth.de>"]
+edition = "2018"
+
+[dependencies]
+indicatif = "0.15"
+rust-htslib = { version = "0.32", features = ["serde"] }
+git-version = "0.3"
+log = "0.4"
+fern = "0.5"
+chrono = "0.4"
+clap = "2.33"
+lib-common = { path = "../lib-common" }
+lib-config = { path = "../lib-config" }
+thiserror = "1"
+toml = "0.5"
+
+[dev-dependencies]
+pretty_assertions = "0.6"
+tempdir = "0.3"

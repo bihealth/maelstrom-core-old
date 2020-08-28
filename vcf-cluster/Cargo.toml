@@ -1,11 +1,13 @@
 [package]
-name = "snappysv-stdvcf"
+name = "snappysv-vcf-merge"
 version = "0.1.0"
 authors = ["Manuel Holtgrewe <manuel.holtgrewe@bihealth.de>"]
 edition = "2018"
 
 [dependencies]
 indicatif = "0.15"
+bio = "0.32"
+disjoint-sets = "0.4"
 rust-htslib = { version = "0.32", features = ["serde"] }
 git-version = "0.3"
 log = "0.4"

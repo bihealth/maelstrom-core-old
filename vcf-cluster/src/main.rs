@@ -1,4 +1,4 @@
-/// clusvcf -- Cluster VCF files with structural variants.
+/// vcf-cluster -- Cluster VCF files with structural variants.
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;

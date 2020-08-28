@@ -1,4 +1,4 @@
-/// uniqbam -- Remove duplicate rows from BAM files (as created by scanbam)
+/// bam-unique -- Remove duplicate rows from BAM files (as created by scanbam)
 use std::collections::HashSet;
 use std::fs;
 use std::path::Path;

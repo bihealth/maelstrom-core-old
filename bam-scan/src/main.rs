@@ -1,4 +1,4 @@
-/// scanbam -- Scan BAM file for discordant and clipped reads
+/// bam-scan -- Scan BAM file for discordant and clipped reads
 use std::fs;
 use std::path::Path;
 use std::str;

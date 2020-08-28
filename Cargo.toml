@@ -1,9 +1,9 @@
 [workspace]
 members = [
-    "scanbam",
-    "uniqbam",
-    "stdvcf",
-    "clusvcf",
-    "lib-config",
+    "bam-scan",
+    "bam-unique",
     "lib-common",
+    "lib-config",
+    "vcf-cluster",
+    "vcf-standardize",
 ]

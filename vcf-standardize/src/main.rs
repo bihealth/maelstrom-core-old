@@ -1,4 +1,4 @@
-/// stdvcf -- Extract and standardize tool output VCF to standardized VCF.
+/// vcf-standardize -- Extract and standardize tool output VCF to standardized VCF.
 use std::fs;
 use std::path::Path;
 

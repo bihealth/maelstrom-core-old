@@ -1,5 +1,4 @@
 /// vcf-cluster -- Cluster VCF files with structural variants.
-use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::iter::FromIterator;
@@ -13,8 +12,9 @@ use git_version::git_version;
 use log::{debug, error, info, LevelFilter};
 use rust_htslib::{bcf, bcf::Read};
 
-use lib_common::bcf::{build_vcf_header, guess_bcf_format};
+use lib_common::bcf::{build_vcf_header, collect_contigs, guess_bcf_format};
 use lib_common::error::Error;
+use lib_common::sv::*;
 use lib_config::{ClusterSettings, Config};
 
 /// Command line options
@@ -56,178 +56,8 @@ impl Options {
     }
 }
 
-/// Representation of a structural variant record suitable for clustering.
-#[derive(Debug, Clone)]
-struct StandardizedRecord {
-    chrom: String,
-    pos: i64,
-    reference: String,
-    alt: String,
-    filters: Vec<String>,
-    chrom2: String,
-    end2: i64,
-    sv_type: String,
-    strands: String,
-    sv_len: i64,
-    algorithms: Vec<String>,
-    samples: Vec<String>,
-    gts: Vec<String>,
-    called_by: Vec<Vec<String>>,
-}
-
-impl PartialEq for StandardizedRecord {
-    fn eq(&self, other: &Self) -> bool {
-        self.chrom == other.chrom
-            && self.pos == other.pos
-            && self.chrom2 == other.chrom2
-            && self.end2 == other.end2
-            && self.reference == other.reference
-            && self.alt == other.alt
-    }
-}
-
-impl Eq for StandardizedRecord {}
-
-impl Ord for StandardizedRecord {
-    fn cmp(&self, other: &Self) -> Ordering {
-        (self.pos, self.end2, &self.sv_type, &other.strands).cmp(&(
-            other.pos,
-            other.end2,
-            &other.sv_type,
-            &other.strands,
-        ))
-    }
-}
-
-impl PartialOrd for StandardizedRecord {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl StandardizedRecord {
-    fn new() -> Self {
-        Self {
-            chrom: String::new(),
-            pos: 0,
-            reference: String::new(),
-            alt: String::new(),
-            filters: Vec::new(), // TODO: remove?
-            chrom2: String::new(),
-            end2: 0,
-            sv_type: String::new(),
-            strands: String::new(),
-            sv_len: 0,
-            algorithms: Vec::new(),
-            samples: Vec::new(),
-            gts: Vec::new(),
-            called_by: Vec::new(),
-        }
-    }
-
-    fn from_bcf_record(record: &mut bcf::Record) -> Result<Self, Error> {
-        let sample_count = record.header().sample_count() as usize;
-
-        let mut called_by: Vec<Vec<String>> = vec![vec![]; sample_count];
-        for algorithm in vec!["delly".to_string()] {
-            if let Ok(arr) = record.format(b"delly").integer() {
-                for i in 0..sample_count {
-                    if arr[i][0] != 0 {
-                        called_by[i].push(algorithm.clone());
-                    }
-                }
-            }
-        }
-
-        Ok(Self {
-            chrom: String::from_utf8(record.header().rid2name(record.rid().unwrap())?.to_vec())?,
-            pos: record.pos(),
-            reference: String::from_utf8(record.alleles()[0].to_vec())?,
-            alt: String::from_utf8(record.alleles()[1].to_vec())?,
-            filters: record
-                .filters()
-                .map(|id| String::from_utf8(record.header().id_to_name(id)).unwrap())
-                .collect(),
-            chrom2: String::from_utf8(record.info(b"CHR2").string()?.unwrap()[0].to_vec())?,
-            end2: record.info(b"END2").integer()?.unwrap()[0] as i64,
-            sv_type: String::from_utf8(record.info(b"SVTYPE").string()?.unwrap()[0].to_vec())?,
-            strands: String::from_utf8(record.info(b"STRANDS").string()?.unwrap()[0].to_vec())?,
-            sv_len: record.info(b"SVLEN").integer()?.unwrap()[0] as i64,
-            algorithms: record
-                .info(b"ALGORITHMS")
-                .string()?
-                .unwrap()
-                .iter()
-                .map(|s| String::from_utf8(s.to_vec()).unwrap())
-                .collect(),
-            samples: record
-                .header()
-                .samples()
-                .iter()
-                .map(|s| String::from_utf8(s.to_vec()).unwrap())
-                .collect(),
-            gts: (0..sample_count)
-                .map(|i| {
-                    record
-                        .genotypes()
-                        .unwrap()
-                        .get(i as usize)
-                        .iter()
-                        .map(|gt_allele| match gt_allele {
-                            bcf::record::GenotypeAllele::Unphased(i)
-                            | bcf::record::GenotypeAllele::Phased(i) => format!("{}", i),
-                            _ => ".".to_string(),
-                        })
-                        .collect::<Vec<_>>()
-                        .join("-")
-                })
-                .collect(),
-            called_by,
-        })
-    }
-
-    fn interval(&self) -> std::ops::Range<i64> {
-        self.extended_interval(0)
-    }
-
-    fn extended_interval(&self, delta: i64) -> std::ops::Range<i64> {
-        let mut tmp = if self.sv_type == "BND" {
-            self.pos..(self.pos + 1)
-        } else {
-            self.pos..self.end2
-        };
-        if tmp.start > tmp.end {
-            std::mem::swap(&mut tmp.start, &mut tmp.end);
-        }
-        tmp.start -= delta;
-        tmp.end += delta;
-        tmp
-    }
-}
-
-fn overlap(lhs: &std::ops::Range<i64>, rhs: &std::ops::Range<i64>) -> std::ops::Range<i64> {
-    if lhs.end <= rhs.start || rhs.end <= lhs.start {
-        #[allow(clippy::reversed_empty_ranges)]
-        std::ops::Range { start: 0, end: 0 }
-    } else {
-        std::ops::Range {
-            start: std::cmp::max(lhs.start, rhs.start),
-            end: std::cmp::min(lhs.end, rhs.end),
-        }
-    }
-}
-
 fn range_len(r: &std::ops::Range<i64>) -> i64 {
     r.end - r.start
-}
-
-fn collect_contigs(reader: &bcf::IndexedReader) -> Result<Vec<String>, Error> {
-    let mut result: Vec<String> = Vec::new();
-    let header = reader.header();
-    for rid in 0..header.contig_count() {
-        result.push(std::str::from_utf8(header.rid2name(rid)?)?.to_string());
-    }
-    Ok(result)
 }
 
 /// Check contigs between all input files.
@@ -343,8 +173,8 @@ fn cluster_records(
     let mut result = Vec::new();
 
     let cluster_settings = match options.setting.as_str() {
-        "per_tool_pesr" => config.clusvcf_presets_per_tool_pesr.clone(),
-        "per_tool_doc" => config.clusvcf_presets_per_tool_doc.clone(),
+        "per_tool_pesr" => config.vcf_cluster_presets_per_tool_pesr.clone(),
+        "per_tool_doc" => config.vcf_cluster_presets_per_tool_doc.clone(),
         _ => return Err(Error::UnknownClusterSettingName()),
     };
 
@@ -466,53 +296,10 @@ fn cluster_records(
 
 /// Write out clustered records.
 fn write_records(records: &[StandardizedRecord], writer: &mut bcf::Writer) -> Result<(), Error> {
-    let sample_count = writer.header().sample_count();
-
     for (i, r) in records.iter().enumerate() {
         let mut record = writer.empty_record();
-        record.set_rid(Some(writer.header().name2rid(r.chrom.as_bytes())?));
-        record.set_pos(r.pos);
+        r.update_bcf_record(&mut record)?;
         record.set_id(format!("SV{:08}", i + 1).as_bytes())?;
-        let alleles: Vec<&[u8]> = vec![&r.reference.as_bytes(), &r.alt.as_bytes()];
-        record.set_alleles(&alleles)?;
-        for filter in &r.filters {
-            record.push_filter(writer.header().name_to_id(&filter.as_bytes())?);
-        }
-        record.push_info_integer(b"END2", vec![r.end2 as i32].as_slice())?;
-        record.push_info_string(b"CHR2", vec![r.chrom2.as_bytes()].as_slice())?;
-        record.push_info_string(b"SVTYPE", vec![r.sv_type.as_bytes()].as_slice())?;
-        record.push_info_string(b"STRANDS", vec![r.strands.as_bytes()].as_slice())?;
-        record.push_info_integer(b"SVLEN", vec![r.sv_len as i32].as_slice())?;
-        let algorithms: Vec<&[u8]> = r.algorithms.iter().map(|a| a.as_bytes()).collect();
-        record.push_info_string(b"ALGORITHMS", algorithms.as_slice())?;
-
-        // Prepare buffers for FORMAT fields.
-        let mut called_by: HashMap<String, Vec<i32>> = HashMap::new();
-        for algorithm in &r.algorithms {
-            called_by.insert(algorithm.clone(), vec![0; sample_count as usize]);
-        }
-
-        // Write information from "sparse" StandardizedRecord into BCF record.
-        let mut genotypes = vec![0; 2 * sample_count as usize];
-        for (i, sample) in r.samples.iter().enumerate() {
-            let sample_idx = *writer.header().sample_to_id(sample.as_bytes())? as usize;
-
-            genotypes[2 * sample_idx] = (r.gts[i].starts_with('1') as i32 + 1) << 1;
-            genotypes[2 * sample_idx + 1] = (r.gts[i].ends_with('1') as i32 + 1) << 1;
-            for algorithm in &r.called_by[i] {
-                if let Some(arr) = called_by.get_mut(algorithm) {
-                    arr[sample_idx] = 1;
-                }
-            }
-        }
-
-        // Write FORMAT fields into output record.
-        record
-            .push_format_integer(b"GT", &genotypes)
-            .expect("could not write genotype");
-        for (algorithm, is_called) in &called_by {
-            record.push_format_integer(algorithm.as_bytes(), &is_called)?;
-        }
 
         // Actually write out output record.
         writer.write(&record)?;
@@ -594,7 +381,7 @@ fn perform_clustering(options: &Options, config: &Config) -> Result<(), Error> {
 
 fn main() -> Result<(), Error> {
     // Setup command line parser and parse options.
-    let matches = App::new("snappysv-stdvcf")
+    let matches = App::new("snappysv-vcf-cluster")
         .version(git_version!())
         .author("Manuel Holtgrewe <manuel.holtgrewe@bihealth.de>")
         .about("Extract and standardize records from tool VCF files")
@@ -635,7 +422,7 @@ fn main() -> Result<(), Error> {
         .chain(std::io::stderr())
         .apply()
         .unwrap();
-    info!("Starting snappysv-clusvcf");
+    info!("Starting snappysv-vcf-cluster");
     info!("options: {:?}", &options);
 
     // Parse further settings from configuration file.
@@ -692,7 +479,7 @@ mod tests {
     }
 
     #[test]
-    fn test_clusvcf_delly2_filter() -> Result<(), super::Error> {
+    fn test_vcf_cluster_delly2_filter() -> Result<(), super::Error> {
         let tmp_dir = TempDir::new("tests")?;
         _perform_clustering_and_test(
             &tmp_dir,

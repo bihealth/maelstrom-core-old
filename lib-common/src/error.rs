@@ -1,4 +1,4 @@
-use rust_htslib::{bam, bcf};
+use rust_htslib::{bam, bcf, tbx};
 
 /// Global error type.
 #[derive(thiserror::Error, Debug)]
@@ -34,6 +34,12 @@ pub enum Error {
         #[from]
         source: bam::errors::Error, // TODO: add experimental backtrace feature?
     },
+    /// Problem with htslib
+    #[error("problem with Tabix file access")]
+    HtslibTbxERror {
+        #[from]
+        source: tbx::errors::Error, // TODO: add experimental backtrace feature?
+    },
     /// Problem with string conversion
     #[error("problem with string conversion")]
     StrUtf8Error {
@@ -45,5 +51,11 @@ pub enum Error {
     StringUtf8Error {
         #[from]
         source: std::string::FromUtf8Error, // TODO: add experimental backtrace feature?
+    },
+    /// Problem with deserialization from JSON
+    #[error("problem with deserialization from JSON")]
+    JsonDeserializationError {
+        #[from]
+        source: serde_json::error::Error, // TODO: add experimental backtrace feature?
     },
 }

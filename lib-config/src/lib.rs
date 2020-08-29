@@ -116,7 +116,7 @@ fn default_stdvcf_apply_filters() -> bool {
     true
 }
 
-fn default_clusvcf_presets_per_tool_pesr() -> ClusterSettings {
+fn default_vcf_cluster_presets_per_tool_pesr() -> ClusterSettings {
     ClusterSettings {
         reciprocal_overlap: 0.1,
         max_bp_distance: Some(300),
@@ -126,7 +126,7 @@ fn default_clusvcf_presets_per_tool_pesr() -> ClusterSettings {
     }
 }
 
-fn default_clusvcf_presets_per_tool_doc() -> ClusterSettings {
+fn default_vcf_cluster_presets_per_tool_doc() -> ClusterSettings {
     ClusterSettings {
         reciprocal_overlap: 0.8,
         max_bp_distance: None,
@@ -143,6 +143,10 @@ fn default_collect_doc_config() -> DepthOfCoverageConfig {
         window_length: default_window_length(),
         count_kind: default_count_kind(),
     }
+}
+
+fn default_annotate_read_evidence_max_dist() -> i64 {
+    300
 }
 
 /// Program configuration, from config file.
@@ -199,14 +203,18 @@ pub struct Config {
     pub stdvcf_apply_filters: bool,
 
     /// Cluster preset for per-tool (PE/SR) aggregation.
-    #[serde(default = "default_clusvcf_presets_per_tool_pesr")]
-    pub clusvcf_presets_per_tool_pesr: ClusterSettings,
+    #[serde(default = "default_vcf_cluster_presets_per_tool_pesr")]
+    pub vcf_cluster_presets_per_tool_pesr: ClusterSettings,
 
     /// Cluster preset for per-tool (DoC) aggregation.
-    #[serde(default = "default_clusvcf_presets_per_tool_doc")]
-    pub clusvcf_presets_per_tool_doc: ClusterSettings,
+    #[serde(default = "default_vcf_cluster_presets_per_tool_doc")]
+    pub vcf_cluster_presets_per_tool_doc: ClusterSettings,
 
     /// Preset for depth of coverage extraction.
     #[serde(default = "default_collect_doc_config")]
     pub collect_doc_config: DepthOfCoverageConfig,
+
+    /// Number of bases to look for read evidence to annotate.
+    #[serde(default = "default_annotate_read_evidence_max_dist")]
+    pub annotate_read_evidence_max_dist: i64,
 }

@@ -1,4 +1,4 @@
-use rust_htslib::bcf;
+use rust_htslib::{bcf, bcf::Read};
 
 use super::error::Error;
 
@@ -99,6 +99,15 @@ pub fn build_vcf_header(template: &bcf::header::HeaderView) -> Result<bcf::Heade
     }
 
     Ok(header)
+}
+
+pub fn collect_contigs(reader: &bcf::IndexedReader) -> Result<Vec<String>, Error> {
+    let mut result: Vec<String> = Vec::new();
+    let header = reader.header();
+    for rid in 0..header.contig_count() {
+        result.push(std::str::from_utf8(header.rid2name(rid)?)?.to_string());
+    }
+    Ok(result)
 }
 
 #[cfg(test)]

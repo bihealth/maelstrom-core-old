@@ -1,0 +1,9 @@
+#!/bin/bash
+
+if [[ "$#" -gt 1 ]]; then
+    >&2 echo "USAGE: sort-bed INPUT
+    exit 1
+fi
+
+zcat --force "$1" | head -n 100 | grep '^#'
+zcat --force "$1" | grep -v '#' | sort -k1,1g -k2,2n -k3,3n

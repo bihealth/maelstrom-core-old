@@ -2,7 +2,9 @@
 pub mod bam;
 pub mod bcf;
 pub mod error;
+pub mod read_evidence;
 pub mod stats;
+pub mod sv;
 
 /// Enumeration for calling algorithms.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]

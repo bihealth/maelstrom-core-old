@@ -1,10 +1,12 @@
 [package]
-name = "snappysv-vcf-standardize"
+name = "snappysv-vcf-annotate"
 version = "0.1.0"
 authors = ["Manuel Holtgrewe <manuel.holtgrewe@bihealth.de>"]
 edition = "2018"
 
 [dependencies]
+bio-types = "0.7"
+bio = "0.32"
 indicatif = "0.15"
 rust-htslib = { git = "https://github.com/holtgrewe/rust-htslib.git", branch = "bcf-fixes" }
 git-version = "0.3"

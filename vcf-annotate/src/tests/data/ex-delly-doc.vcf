@@ -1,0 +1,34 @@
+##fileformat=VCFv4.2
+##FILTER=<ID=PASS,Description="All filters passed">
+##fileDate=20200828
+##contig=<ID=one,length=1000>
+##contig=<ID=two,length=1000>
+##ALT=<ID=WINDOW,Description="Record describes a window for read or coverage counting">
+##INFO=<ID=CO,Number=1,Type=String,Description="Comment">
+##INFO=<ID=END,Number=1,Type=Integer,Description="Window end">
+##INFO=<ID=MEAN_MAPQ,Number=1,Type=Float,Description="Mean MAPQ value across samples for approximating mapability">
+##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
+##FORMAT=<ID=MQ,Number=1,Type=Float,Description="Mean read MAPQ from region">
+##FORMAT=<ID=RCV,Number=1,Type=Float,Description="Raw coverage value">
+##FORMAT=<ID=RCVSD,Number=1,Type=Float,Description="Raw coverage standard deviation">
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	sample-1
+one	1	one:1-100	N	<WINDOW>	0	.	END=100;MEAN_MAPQ=60	GT:RCV:RCVSD:MQ	./.:30.0:0.1:60
+one	101	one:101-200	N	<WINDOW>	0	.	END=200;MEAN_MAPQ=60	GT:RCV:RCVSD:MQ	./.:30.0:0.1:60
+one	201	one:201-300	N	<WINDOW>	0	.	END=300;MEAN_MAPQ=60;CO=Deletion	GT:RCV:RCVSD:MQ	./.:15.0:0.1:60
+one	301	one:301-400	N	<WINDOW>	0	.	END=400;MEAN_MAPQ=60;CO=Deletion	GT:RCV:RCVSD:MQ	./.:15.0:0.1:60
+one	401	one:401-500	N	<WINDOW>	0	.	END=500;MEAN_MAPQ=60;CO=Deletion	GT:RCV:RCVSD:MQ	./.:15.0:0.1:60
+one	501	one:501-600	N	<WINDOW>	0	.	END=600;MEAN_MAPQ=60	GT:RCV:RCVSD:MQ	./.:30.0:0.1:60
+one	601	one:601-700	N	<WINDOW>	0	.	END=700;MEAN_MAPQ=60	GT:RCV:RCVSD:MQ	./.:30.0:0.1:60
+one	701	one:701-800	N	<WINDOW>	0	.	END=800;MEAN_MAPQ=60	GT:RCV:RCVSD:MQ	./.:30.0:0.1:60
+one	801	one:801-900	N	<WINDOW>	0	.	END=900;MEAN_MAPQ=60	GT:RCV:RCVSD:MQ	./.:30.0:0.1:60
+one	901	one:901-1000	N	<WINDOW>	0	.	END=1000;MEAN_MAPQ=60	GT:RCV:RCVSD:MQ	./.:30.0:0.1:60
+two	1	two:1-100	N	<WINDOW>	0	.	END=100;MEAN_MAPQ=60	GT:RCV:RCVSD:MQ	./.:30.0:0.1:60
+two	101	two:101-200	N	<WINDOW>	0	.	END=200;MEAN_MAPQ=60	GT:RCV:RCVSD:MQ	./.:30.0:0.1:60
+two	201	two:201-300	N	<WINDOW>	0	.	END=300;MEAN_MAPQ=60;CO=Duplication	GT:RCV:RCVSD:MQ	./.:60.0:0.1:60
+two	301	two:301-400	N	<WINDOW>	0	.	END=400;MEAN_MAPQ=60;CO=Duplication	GT:RCV:RCVSD:MQ	./.:60.0:0.1:60
+two	401	two:401-500	N	<WINDOW>	0	.	END=500;MEAN_MAPQ=60;CO=Duplication	GT:RCV:RCVSD:MQ	./.:60.0:0.1:60
+two	501	two:501-600	N	<WINDOW>	0	.	END=600;MEAN_MAPQ=60	GT:RCV:RCVSD:MQ	./.:30.0:0.1:60
+two	601	two:601-700	N	<WINDOW>	0	.	END=700;MEAN_MAPQ=60	GT:RCV:RCVSD:MQ	./.:30.0:0.1:60
+two	701	two:701-800	N	<WINDOW>	0	.	END=800;MEAN_MAPQ=60	GT:RCV:RCVSD:MQ	./.:30.0:0.1:60
+two	801	two:801-900	N	<WINDOW>	0	.	END=900;MEAN_MAPQ=60	GT:RCV:RCVSD:MQ	./.:30.0:0.1:60
+two	901	two:901-1000	N	<WINDOW>	0	.	END=1000;MEAN_MAPQ=60	GT:RCV:RCVSD:MQ	./.:30.0:0.1:60

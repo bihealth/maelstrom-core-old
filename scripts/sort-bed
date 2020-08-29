@@ -1,7 +1,9 @@
 #!/bin/bash
 
+export LANG=C
+
 if [[ "$#" -gt 1 ]]; then
-    >&2 echo "USAGE: sort-bed INPUT
+    >&2 echo "USAGE: sort-bed INPUT"
     exit 1
 fi
 

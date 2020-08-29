@@ -13,6 +13,7 @@ use lib_common::bam::library::{
     LibraryProperties,
 };
 use lib_common::error::Error;
+use lib_common::read_evidence;
 use lib_config::Config;
 
 /// Command line options
@@ -45,107 +46,6 @@ impl Options {
             },
             overwrite: matches.occurrences_of("overwrite") > 0,
         })
-    }
-}
-
-mod read_evidence {
-    use serde::{Deserialize, Serialize};
-    use std::io::prelude::*;
-
-    /// Strand.
-    #[derive(Serialize, Deserialize)]
-    pub enum Strand {
-        Forward,
-        Reverse,
-    }
-
-    /// Sides.
-    #[derive(Serialize, Deserialize)]
-    pub enum Sides {
-        Left,
-        Right,
-        Both,
-        Neither,
-    }
-
-    /// Read pair/split read annotation from one read alignment.
-    #[derive(Serialize, Deserialize)]
-    pub enum Record {
-        /// Paired read based evidence.
-        PairedRead {
-            /// Name of the read pair.
-            read_name: String,
-            /// Whether this alignment is first in pair.
-            is_first1: bool,
-            /// Contig of this alignment.
-            contig1: String,
-            /// Start position on this contig.
-            start1: i64,
-            /// End position on this contig.
-            end1: i64,
-            /// Read orientation in this contig.
-            strand1: Strand,
-            /// Other alignment's contig.
-            contig2: Option<String>,
-            /// Start position on other contig.
-            start2: Option<i64>,
-            /// Strand on other contig.
-            strand2: Option<Strand>,
-            /// Template size.
-            tlen: Option<i64>,
-        },
-        /// Split read based evidence.
-        SplitRead {
-            /// Name of the read pair.
-            read_name: String,
-            /// Whether is first read in this alignment.
-            is_first: bool,
-            /// The alignment's contig.
-            contig: String,
-            /// The alignment's start position.
-            start: i64,
-            /// The alignment's end position.
-            end: i64,
-            /// The side that the read has been clipped on.
-            clipped_sides: Sides,
-        },
-    }
-
-    pub struct Writer {
-        handle: std::fs::File,
-    }
-
-    impl Writer {
-        pub fn from_path(path: &str) -> Result<Self, std::io::Error> {
-            let mut handle = std::fs::File::create(path)?;
-            handle.write_all(b"#contig\tstart\tend\tsignal\n")?;
-            Ok(Self { handle })
-        }
-
-        pub fn write(&mut self, e: &Record) -> Result<(), std::io::Error> {
-            match e {
-                Record::PairedRead {
-                    contig1,
-                    start1,
-                    end1,
-                    ..
-                } => {
-                    self.handle
-                        .write_all(format!("{}\t{}\t{}\t", &contig1, start1, end1).as_bytes())?;
-                }
-                Record::SplitRead {
-                    contig, start, end, ..
-                } => {
-                    self.handle
-                        .write_all(format!("{}\t{}\t{}\t", &contig, start, end).as_bytes())?;
-                }
-            }
-            self.handle
-                .write_all(serde_json::to_string(&e)?.as_bytes())?;
-            self.handle.write_all(b"\n")?;
-
-            Ok(())
-        }
     }
 }
 

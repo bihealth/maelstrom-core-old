@@ -6,6 +6,7 @@ members = [
     "bam-collect-pesr",
     "lib-common",
     "lib-config",
+    "vcf-annotate",
     "vcf-cluster",
     "vcf-standardize",
 ]

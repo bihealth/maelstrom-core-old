@@ -468,10 +468,11 @@ fn cluster_records(
 fn write_records(records: &[StandardizedRecord], writer: &mut bcf::Writer) -> Result<(), Error> {
     let sample_count = writer.header().sample_count();
 
-    for r in records {
+    for (i, r) in records.iter().enumerate() {
         let mut record = writer.empty_record();
         record.set_rid(Some(writer.header().name2rid(r.chrom.as_bytes())?));
         record.set_pos(r.pos);
+        record.set_id(format!("SV{:08}", i + 1).as_bytes())?;
         let alleles: Vec<&[u8]> = vec![&r.reference.as_bytes(), &r.alt.as_bytes()];
         record.set_alleles(&alleles)?;
         for filter in &r.filters {

@@ -309,17 +309,21 @@ fn cluster_records(
 }
 
 /// Write out clustered records.
-fn write_records(records: &[StandardizedRecord], writer: &mut bcf::Writer) -> Result<(), Error> {
+fn write_records(
+    records: &[StandardizedRecord],
+    writer: &mut bcf::Writer,
+    offset: usize,
+) -> Result<usize, Error> {
     for (i, r) in records.iter().enumerate() {
         let mut record = writer.empty_record();
         r.update_bcf_record(&mut record)?;
-        record.set_id(format!("SV{:08}", i + 1).as_bytes())?;
+        record.set_id(format!("SV{:08}", offset + i + 1).as_bytes())?;
 
         // Actually write out output record.
         writer.write(&record)?;
     }
 
-    Ok(())
+    Ok(offset + records.len())
 }
 
 /// Main entry point after parsing command line and loading options.
@@ -380,6 +384,7 @@ fn perform_clustering(options: &Options, config: &Config) -> Result<(), Error> {
         )
     };
 
+    let mut offset = 0;
     for region in &regions {
         // Extract StandardizedRecord data for all contigs from all files.
         let records = {
@@ -395,7 +400,7 @@ fn perform_clustering(options: &Options, config: &Config) -> Result<(), Error> {
         let records = cluster_records(&options, &config, &records)?;
 
         // Write out clusters for current contig.
-        write_records(&records, &mut writer)?;
+        offset = write_records(&records, &mut writer, offset)?;
     }
 
     info!("Done clustering BCF file...");

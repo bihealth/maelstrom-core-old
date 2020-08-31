@@ -2,6 +2,7 @@
 use std::fs;
 use std::path::Path;
 
+use bio_types::genome::{AbstractInterval, Interval};
 use clap::{App, Arg, ArgMatches};
 use git_version::git_version;
 use indicatif::{ProgressBar, ProgressStyle};
@@ -13,6 +14,7 @@ use lib_common::bam::library::{
     LibraryProperties,
 };
 use lib_common::error::Error;
+use lib_common::parse_region;
 use lib_common::read_evidence;
 use lib_config::Config;
 
@@ -21,6 +23,8 @@ use lib_config::Config;
 struct Options {
     /// Verbosity level
     verbosity: u64,
+    /// List of regions to call.
+    regions: Option<Vec<Interval>>,
     /// Path to configuration file to use,
     path_config: Option<String>,
     /// Path to input file.
@@ -35,6 +39,14 @@ impl Options {
     pub fn from_arg_matches<'a>(matches: &ArgMatches<'a>) -> Result<Self, Error> {
         Ok(Options {
             verbosity: matches.occurrences_of("v"),
+            regions: matches
+                .value_of("regions")
+                .map(|s| {
+                    let x: Result<Vec<Interval>, Error> =
+                        s.split(',').map(|t| parse_region(&t)).collect();
+                    x
+                })
+                .transpose()?,
             path_config: matches.value_of("config").map(|s| s.to_string()),
             path_input: match matches.value_of("input") {
                 Some(x) => String::from(x),
@@ -86,9 +98,9 @@ fn extract_evidence(
             start1: record.pos(),
             end1: record.cigar().end_pos(),
             strand1: if record.is_reverse() {
-                read_evidence::Strand::Forward
-            } else {
                 read_evidence::Strand::Reverse
+            } else {
+                read_evidence::Strand::Forward
             },
             contig2: if record.is_paired() && record.mtid() >= 0 {
                 Some(
@@ -105,9 +117,9 @@ fn extract_evidence(
             },
             strand2: if record.is_paired() {
                 Some(if record.is_mate_reverse() {
-                    read_evidence::Strand::Forward
-                } else {
                     read_evidence::Strand::Reverse
+                } else {
+                    read_evidence::Strand::Forward
                 })
             } else {
                 None
@@ -142,21 +154,36 @@ fn perform_collection(
     // Evidence is written to an extended BED3 file.
     let mut writer = read_evidence::Writer::from_path(&options.path_output)?;
 
-    for target_id in 0..target_count {
-        let target_name = std::str::from_utf8(reader.header().target_names()[target_id])
-            .unwrap()
-            .to_string();
-        if options.verbosity > 0 {
-            info!(
-                "Starting to scan target #{}/{}: {}",
-                target_id + 1,
-                target_count,
-                &target_name
-            );
-        }
-        let target_len = reader.header().target_len(target_id as u32).unwrap() as i64;
+    let regions = if let Some(regions) = &options.regions {
+        regions.clone()
+    } else {
+        (0..target_count)
+            .map(|tid| {
+                Interval::new(
+                    std::str::from_utf8(reader.header().target_names()[tid])
+                        .unwrap()
+                        .to_string(),
+                    0..(reader.header().target_len(tid as u32).unwrap() as u64),
+                )
+            })
+            .collect()
+    };
 
-        reader.fetch(target_id as u32, 0, target_len as u64)?;
+    for region in regions {
+        if options.verbosity > 0 {
+            info!("Starting to scan {:?}", &region);
+        }
+        let target_id = reader
+            .header()
+            .target_names()
+            .iter()
+            .enumerate()
+            .find(|(_, name)| **name == region.contig().as_bytes())
+            .map(|(i, _)| i)
+            .ok_or(Error::InvalidRegion())?;
+        let target_len = (region.range().end - region.range().start) as i64;
+
+        reader.fetch(target_id as u32, region.range().start, region.range().end)?;
 
         let progress_bar =
             if options.verbosity == 0 {
@@ -166,7 +193,7 @@ fn perform_collection(
                     "scanning {msg:.green.bold} [{elapsed_precise}] [{wide_bar:.cyan/blue}] \
                     {pos:>7}/{len:7} Kbp {elapsed}/{eta}")
                 .progress_chars("=>-"));
-                prog_bar.set_message(&target_name);
+                prog_bar.set_message(&format!("{:?}", &region));
                 Some(prog_bar)
             } else {
                 None
@@ -198,6 +225,45 @@ fn perform_collection(
     Ok(())
 }
 
+fn load_library_properties(
+    path: &str,
+    config: &Config,
+) -> Result<Option<LibraryProperties>, Error> {
+    let reader = bam::Reader::from_path(path)?;
+    for header_line in std::str::from_utf8(reader.header().as_bytes())
+        .unwrap()
+        .split('\n')
+    {
+        if !header_line.is_empty() && header_line.starts_with("@RG") {
+            let mut pi = None;
+            let mut ps = None;
+            let mut pr = None;
+            for token in header_line.split('\t') {
+                if token.starts_with("PI:") {
+                    pi = Some(token[3..].parse()?);
+                }
+                if token.starts_with("PS:") {
+                    ps = Some(token[3..].parse()?);
+                }
+                if token.starts_with("PI:") {
+                    pr = Some(token[3..].parse()?);
+                }
+            }
+            if let (Some(median_isize), Some(std_dev_isize), Some(max_rlen)) = (pi, ps, pr) {
+                return Ok(Some(LibraryProperties {
+                    median_isize,
+                    std_dev_isize,
+                    max_rlen,
+                    max_normal_isize: (median_isize + std_dev_isize + config.lib_estimation_sd_mult)
+                        .ceil() as i64,
+                }));
+            }
+        }
+    }
+
+    Ok(None)
+}
+
 fn main() -> Result<(), Error> {
     // Setup command line parser and parse options.
     let matches = App::new("snappysv-bam-collect-pesr")
@@ -208,6 +274,7 @@ fn main() -> Result<(), Error> {
             Arg::from_usage("-v... 'Increase verbosity'"),
             Arg::from_usage("--overwrite 'Allow overwriting of output file'"),
             Arg::from_usage("-c, --config=[FILE] 'Sets a custom config file'"),
+            Arg::from_usage("-r, --regions=[REGIONS] 'comma-separated list of regions'"),
             Arg::from_usage("<input> 'input file to read from'"),
             Arg::from_usage("<output> 'output file to write to'"),
         ])
@@ -215,7 +282,11 @@ fn main() -> Result<(), Error> {
     let options = Options::from_arg_matches(&matches)?;
 
     // Output file must not exist yet.
-    if Path::new(&options.path_output).exists() && !options.overwrite {
+    if options.path_output != "-"
+        && options.path_output != "/dev/stdout"
+        && Path::new(&options.path_output).exists()
+        && !options.overwrite
+    {
         return Err(Error::OutputFileExists());
     }
 
@@ -252,8 +323,11 @@ fn main() -> Result<(), Error> {
     info!("options: {:?}", &config);
 
     // Estimate the library insert size.
-    let lib_properties = estimate_library_insert_size(&options.path_input, &config)?;
-    // Run the collection algorithm.
+    let lib_properties = match load_library_properties(&options.path_input, &config)? {
+        Some(lib_properties) => lib_properties,
+        _ => estimate_library_insert_size(&options.path_input, &config)?,
+    };
+    info!("library properties: {:?}", &lib_properties);
     perform_collection(&options, &config, &lib_properties)?;
 
     info!("All done. Have a nice day!");
@@ -263,6 +337,7 @@ fn main() -> Result<(), Error> {
 
 #[cfg(test)]
 mod tests {
+    use super::Interval;
     use pretty_assertions::assert_eq;
     use std::fs;
     use tempdir::TempDir;
@@ -272,10 +347,12 @@ mod tests {
         tmp_dir: &TempDir,
         path_input: &str,
         path_expected: &str,
+        regions: &Option<Vec<Interval>>,
     ) -> Result<(), super::Error> {
         let path_output = String::from(tmp_dir.path().join("out.tsv").to_str().unwrap());
         let options = super::Options {
             verbosity: 1, // disable progress bar
+            regions: regions.clone(),
             path_config: None,
             path_input: String::from(path_input),
             path_output: path_output.clone(),
@@ -306,6 +383,7 @@ mod tests {
             &tmp_dir,
             "./src/tests/data/ex-pe-hard-leading.sorted.bam",
             "./src/tests/data/ex-pe-hard-leading.expected.tsv",
+            &None,
         )?;
         Ok(())
     }
@@ -317,6 +395,7 @@ mod tests {
             &tmp_dir,
             "./src/tests/data/ex-pe-hard-trailing.sorted.bam",
             "./src/tests/data/ex-pe-hard-trailing.expected.tsv",
+            &None,
         )?;
         Ok(())
     }
@@ -328,6 +407,7 @@ mod tests {
             &tmp_dir,
             "./src/tests/data/ex-pe-soft-neg.sorted.bam",
             "./src/tests/data/ex-pe-soft-neg.expected.tsv",
+            &None,
         )?;
         Ok(())
     }
@@ -338,6 +418,7 @@ mod tests {
             &tmp_dir,
             "./src/tests/data/ex-pe-soft-pos.sorted.bam",
             "./src/tests/data/ex-pe-soft-pos.expected.tsv",
+            &None,
         )?;
         Ok(())
     }
@@ -349,6 +430,7 @@ mod tests {
             &tmp_dir,
             "./src/tests/data/ex-pe-tid.sorted.bam",
             "./src/tests/data/ex-pe-tid.expected.tsv",
+            &None,
         )?;
         Ok(())
     }
@@ -360,6 +442,7 @@ mod tests {
             &tmp_dir,
             "./src/tests/data/ex-pe-tlen.sorted.bam",
             "./src/tests/data/ex-pe-tlen.expected.tsv",
+            &None,
         )?;
         Ok(())
     }
@@ -371,6 +454,7 @@ mod tests {
             &tmp_dir,
             "./src/tests/data/ex-pe-orient.sorted.bam",
             "./src/tests/data/ex-pe-orient.expected.tsv",
+            &None,
         )?;
         Ok(())
     }

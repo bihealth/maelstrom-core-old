@@ -8,6 +8,7 @@ edition = "2018"
 bio-types = "0.7"
 bio = "0.32"
 indicatif = "0.15"
+itertools = "0.9"
 rust-htslib = { git = "https://github.com/holtgrewe/rust-htslib.git", branch = "bcf-fixes" }
 git-version = "0.3"
 log = "0.4"

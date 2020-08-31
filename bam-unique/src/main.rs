@@ -81,7 +81,11 @@ fn write_unique(chunk: &[bam::Record], writer: &mut bam::Writer) -> Result<(), b
 fn perform_filtration(options: &Options, config: &Config) -> Result<(), bam::errors::Error> {
     info!("Starting to scan BAM file...");
 
-    let mut reader = bam::Reader::from_path(&options.path_input)?;
+    let mut reader = if &options.path_input == "-" {
+        bam::Reader::from_stdin()?
+    } else {
+        bam::Reader::from_path(&options.path_input)?
+    };
     let header = bam::Header::from_template(reader.header());
     let mut writer = bam::Writer::from_path(
         &options.path_output,
@@ -133,7 +137,11 @@ fn main() -> Result<(), Error> {
     let options = Options::from_arg_matches(&matches)?;
 
     // Output file must not exist yet.
-    if Path::new(&options.path_output).exists() && !options.overwrite {
+    if options.path_output != "-"
+        && options.path_output != "/dev/stdout"
+        && Path::new(&options.path_output).exists()
+        && !options.overwrite
+    {
         return Err(Error::OutputFileExists());
     }
 

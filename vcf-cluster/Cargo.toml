@@ -1,10 +1,11 @@
 [package]
-name = "snappysv-vcf-merge"
+name = "snappysv-vcf-cluster"
 version = "0.1.0"
 authors = ["Manuel Holtgrewe <manuel.holtgrewe@bihealth.de>"]
 edition = "2018"
 
 [dependencies]
+bio-types = "0.7"
 indicatif = "0.15"
 bio = "0.32"
 disjoint-sets = "0.4"

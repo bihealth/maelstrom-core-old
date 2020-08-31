@@ -74,17 +74,30 @@ impl Record {
 }
 
 pub struct Writer {
-    handle: std::fs::File,
+    file: Option<std::fs::File>,
 }
 
 impl Writer {
     pub fn from_path(path: &str) -> Result<Self, std::io::Error> {
-        let mut handle = std::fs::File::create(path)?;
-        handle.write_all(b"#contig\tstart\tend\tsignal\n")?;
-        Ok(Self { handle })
+        let header = b"#contig\tstart\tend\tsignal\n";
+        if path == "-" {
+            std::io::stdout()
+                .lock()
+                .write_all(b"#contig\tstart\tend\tsignal\n")?;
+            Ok(Self { file: None })
+        } else {
+            let mut file = std::fs::File::create(path)?;
+            file.write_all(header)?;
+            Ok(Self { file: Some(file) })
+        }
     }
 
     pub fn write(&mut self, e: &Record) -> Result<(), std::io::Error> {
+        let mut writer: Box<dyn Write> = match &mut self.file {
+            Some(file) => Box::new(file),
+            None => Box::new(std::io::stdout()),
+        };
+
         match e {
             Record::PairedRead {
                 contig1,
@@ -92,19 +105,16 @@ impl Writer {
                 end1,
                 ..
             } => {
-                self.handle
-                    .write_all(format!("{}\t{}\t{}\t", &contig1, start1, end1).as_bytes())?;
+                writer.write_all(format!("{}\t{}\t{}\t", &contig1, start1, end1).as_bytes())?;
             }
             Record::SplitRead {
                 contig, start, end, ..
             } => {
-                self.handle
-                    .write_all(format!("{}\t{}\t{}\t", &contig, start, end).as_bytes())?;
+                writer.write_all(format!("{}\t{}\t{}\t", &contig, start, end).as_bytes())?;
             }
         }
-        self.handle
-            .write_all(serde_json::to_string(&e)?.as_bytes())?;
-        self.handle.write_all(b"\n")?;
+        writer.write_all(serde_json::to_string(&e)?.as_bytes())?;
+        writer.write_all(b"\n")?;
 
         Ok(())
     }
@@ -123,8 +133,13 @@ impl IndexedReader {
         })
     }
 
-    pub fn fetch(&mut self, contig: &str, start: u64, end: u64) -> Result<(), error::Error> {
-        Ok(self.inner.fetch(self.inner.tid(&contig)?, start, end)?)
+    pub fn fetch(&mut self, contig: &str, start: u64, end: u64) -> Result<bool, error::Error> {
+        match self.inner.tid(&contig) {
+            Err(rust_htslib::tbx::errors::Error::UnknownSequence { .. }) => return Ok(false),
+            Err(e) => return Err(error::Error::HtslibTbxERror { source: e }),
+            Ok(tid) => self.inner.fetch(tid, start, end)?,
+        };
+        Ok(true)
     }
 
     pub fn read_record(&mut self) -> Result<Option<Record>, error::Error> {

@@ -146,7 +146,7 @@ fn default_collect_doc_config() -> DepthOfCoverageConfig {
 }
 
 fn default_annotate_read_evidence_max_dist() -> i64 {
-    300
+    1_000
 }
 
 /// Program configuration, from config file.

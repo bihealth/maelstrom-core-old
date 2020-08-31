@@ -11,6 +11,7 @@ use bio_types::strand::NoStrand;
 use bio_types::strand::ReqStrand;
 use clap::{App, Arg, ArgMatches};
 use git_version::git_version;
+use itertools::sorted;
 // use indicatif::{ProgressBar, ProgressStyle};
 use log::{debug, info, LevelFilter};
 use rust_htslib::{bcf, bcf::Read};
@@ -51,16 +52,16 @@ impl Options {
             verbosity: matches.occurrences_of("v"),
             path_config: matches.value_of("config").map(|s| s.to_string()),
             path_pesr_evidence: matches
-                .value_of("path_pesr_evidence")
+                .value_of("path-pesr-evidence")
                 .map(|s| s.to_string()),
-            path_doc_evidence: matches.value_of("path_doc_evidence").map(|s| s.to_string()),
-            path_snv_vcf: matches.value_of("path_snv_vcf").map(|s| s.to_string()),
+            path_doc_evidence: matches.value_of("path-doc-evidence").map(|s| s.to_string()),
+            path_snv_vcf: matches.value_of("path-snv-vcf").map(|s| s.to_string()),
             sample: match matches.value_of("sample") {
                 Some(x) => String::from(x),
                 None => return Err(Error::OptionMissing()),
             },
-            path_input: match matches.values_of("input") {
-                Some(xs) => xs.map(String::from).collect(),
+            path_input: match matches.value_of("input") {
+                Some(x) => String::from(x),
                 None => return Err(Error::OptionMissing()),
             },
             prefix_output: match matches.value_of("output") {
@@ -99,11 +100,12 @@ mod mtx_io {
 fn load_contig_evidence(
     annot_map: &mut AnnotMap<String, read_evidence::Record>,
     contig: &str,
-    options: &Options,
+    path_pesr_evidence: &str,
 ) -> Result<(), Error> {
-    let mut reader =
-        read_evidence::IndexedReader::from_path(&options.path_pesr_evidence.as_ref().unwrap())?;
-    reader.fetch(contig, 0, 1_000_000_000)?;
+    let mut reader = read_evidence::IndexedReader::from_path(&path_pesr_evidence)?;
+    if !reader.fetch(contig, 0, 1_000_000_000)? {
+        return Ok(());
+    }
 
     while let Some(record) = reader.read_record()? {
         debug!("record = {:?}", &record);
@@ -127,6 +129,7 @@ fn load_contig_evidence(
     Ok(())
 }
 
+#[derive(Debug, PartialEq, PartialOrd, Eq, Ord)]
 struct EvidenceCount {
     sv_id: String,
     pe_count: usize,
@@ -150,7 +153,10 @@ fn fetch_evidence(
             read_evidence::Record::PairedRead {
                 read_name, strand1, ..
             } => {
-                debug!("    read_name = {:?}, strand1 = {:?}", &read_name, strand1);
+                debug!(
+                    "    [[PR]] read_name = {:?}, strand1 = {:?}",
+                    &read_name, strand1
+                );
                 match (contig.strand(), strand1) {
                     (ReqStrand::Forward, Strand::Forward)
                     | (ReqStrand::Reverse, Strand::Reverse) => {
@@ -166,7 +172,7 @@ fn fetch_evidence(
                 ..
             } => {
                 debug!(
-                    "    read_name = {:?}, clipped_sides = {:?}",
+                    "    [[SR]] read_name = {:?}, clipped_sides = {:?}",
                     &read_name, clipped_sides,
                 );
                 match (contig.strand(), clipped_sides) {
@@ -192,12 +198,24 @@ fn count_evidence(
     read_evidence: &AnnotMap<String, read_evidence::Record>,
 ) -> (usize, usize) {
     let (left_prs, left_srs) = fetch_evidence(left, read_evidence);
+    let (right_prs, right_srs) = fetch_evidence(right, read_evidence);
     debug!("count_evidence");
     debug!("  left_prs = {:?}", &left_prs);
     debug!("  left_srs = {:?}", &left_srs);
-    let (right_prs, right_srs) = fetch_evidence(right, read_evidence);
     debug!("  right_prs = {:?}", &right_prs);
     debug!("  right_srs = {:?}", &right_srs);
+    debug!("------");
+    debug!(
+        "  both prs = {:?}",
+        &left_prs
+            .intersection(&right_prs)
+            .cloned()
+            .collect::<String>()
+    );
+    debug!(
+        "  both prs = {:?}",
+        &left_prs.intersection(&right_prs).count()
+    );
 
     (
         left_prs.intersection(&right_prs).count(),
@@ -221,16 +239,22 @@ fn annotate_pesr(
     }
 
     let mut reader = bcf::IndexedReader::from_path(&options.path_input)?;
-    reader.fetch(
+    let res = reader.fetch(
         reader.header().name2rid(contig_name.as_bytes())?,
         0,
         1_000_000_000,
-    )?;
+    );
+    match res {
+        Err(rust_htslib::bcf::errors::Error::Seek { .. }) => return Ok(vec![]),
+        Err(_) => res?,
+        Ok(_) => (),
+    }
 
     let mut record = reader.empty_record();
     let mut result = Vec::new();
     while reader.read(&mut record)? {
         let sv_id = std::str::from_utf8(&record.id())?.to_string();
+        debug!(">>> sv_id = {}", &sv_id);
         let record = sv::StandardizedRecord::from_bcf_record(&mut record)?;
         // Define a couple of shortcuts to make the matching code below more compact.
         use ReqStrand::{Forward, Reverse};
@@ -280,8 +304,12 @@ fn annotate_pesr(
             )),
         };
 
+        debug!("Search where: {:?}", &search_wheres);
+
         for (left, right) in &search_wheres {
+            debug!(">>>>> searching: {}/{}", &left, &right);
             let (pe, sr) = count_evidence(left, right, read_evidence);
+            debug!(">>>>> pe = {}, sr = {}", pe, sr);
             pe_count += pe;
             sr_count += sr;
         }
@@ -363,14 +391,19 @@ fn perform_annotation(options: &Options, config: &Config) -> Result<(), Error> {
 
     let reader = bcf::IndexedReader::from_path(&options.path_input)?;
 
-    info!("Loading read-based evidence...");
-    let mut read_evidence: AnnotMap<String, read_evidence::Record> = AnnotMap::new();
-    for rid in 0..reader.header().contig_count() {
-        let contig_name = std::str::from_utf8(reader.header().rid2name(rid)?)?.to_string();
-        debug!("contig_name = {}", &contig_name);
-        load_contig_evidence(&mut read_evidence, &contig_name, options)?;
-    }
-    debug!("evidence: {:?}", &read_evidence);
+    let read_evidence = if let Some(path_pesr_evidence) = &options.path_pesr_evidence {
+        info!("Loading read-based evidence...");
+        let mut read_evidence: AnnotMap<String, read_evidence::Record> = AnnotMap::new();
+        for rid in 0..reader.header().contig_count() {
+            let contig_name = std::str::from_utf8(reader.header().rid2name(rid)?)?.to_string();
+            debug!("contig_name = {}", &contig_name);
+            load_contig_evidence(&mut read_evidence, &contig_name, path_pesr_evidence)?;
+        }
+        debug!("evidence: {:?}", &read_evidence);
+        Some(read_evidence)
+    } else {
+        None
+    };
 
     info!("Processing records from all contigs...");
     for rid in 0..reader.header().contig_count() {
@@ -385,8 +418,15 @@ fn perform_annotation(options: &Options, config: &Config) -> Result<(), Error> {
                 sv_id,
                 pe_count,
                 sr_count,
-            } in annotate_pesr(&options, &config, &read_evidence, &contig_name)?.iter()
-            {
+            } in sorted(
+                annotate_pesr(
+                    &options,
+                    &config,
+                    &read_evidence.as_ref().unwrap(),
+                    &contig_name,
+                )?
+                .iter(),
+            ) {
                 pe_writer.write(&sv_id, *pe_count as f64)?;
                 sr_writer.write(&sv_id, *sr_count as f64)?;
             }
@@ -421,7 +461,7 @@ fn main() -> Result<(), Error> {
             Arg::from_usage("--path-doc-evidence=[FILE] 'Path to PE/SR evidence file'"),
             Arg::from_usage("--path-snv-vcf=[FILE] 'Path to PE/SR evidence file'"),
             Arg::from_usage("-s, --sample=<SAMPLE> 'Set sample to analyze'"),
-            Arg::from_usage("<input>... 'input VCF file to read from'"),
+            Arg::from_usage("<input> 'input VCF file to read from'"),
             Arg::from_usage("<output> 'output prefix; suffixes: .{pe,sr,baf,doc}.tsv"),
         ])
         .get_matches();
@@ -477,7 +517,6 @@ fn main() -> Result<(), Error> {
             toml::from_str(&contents).unwrap()
         }
     };
-    info!("options: {:?}", &config);
 
     // Perform the record annotation.
     perform_annotation(&options, &config)?;

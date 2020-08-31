@@ -130,7 +130,7 @@ pub fn is_split_read_right(
 /// Return if pair is discordant.
 pub fn is_discordant_pair(record: &bam::Record, lib_properties: &LibraryProperties) -> bool {
     record.is_paired() && (record.tid() >= 0 && record.mtid() >= 0 && record.tid() != record.mtid())
-        || record.insert_size() > lib_properties.max_normal_isize
+        || record.insert_size().abs() > lib_properties.max_normal_isize
         || record.is_reverse() == record.is_mate_reverse()
 }
 

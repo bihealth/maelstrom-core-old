@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 /// vcf-cluster -- Cluster VCF files with structural variants.
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
@@ -5,6 +6,7 @@ use std::iter::FromIterator;
 use std::path::Path;
 
 use bio::data_structures::interval_tree::IntervalTree;
+use bio_types::genome::{AbstractInterval, Interval};
 use clap::{App, Arg, ArgMatches};
 use disjoint_sets::UnionFind;
 use git_version::git_version;
@@ -14,6 +16,7 @@ use rust_htslib::{bcf, bcf::Read};
 
 use lib_common::bcf::{build_vcf_header, collect_contigs, guess_bcf_format};
 use lib_common::error::Error;
+use lib_common::parse_region;
 use lib_common::sv::*;
 use lib_config::{ClusterSettings, Config};
 
@@ -22,6 +25,8 @@ use lib_config::{ClusterSettings, Config};
 struct Options {
     /// Verbosity level
     verbosity: u64,
+    /// List of regions to call.
+    regions: Option<Vec<Interval>>,
     /// Path to configuration file to use,
     path_config: Option<String>,
     /// Path to input files.
@@ -38,6 +43,14 @@ impl Options {
     pub fn from_arg_matches<'a>(matches: &ArgMatches<'a>) -> Result<Self, Error> {
         Ok(Options {
             verbosity: matches.occurrences_of("v"),
+            regions: matches
+                .value_of("regions")
+                .map(|s| {
+                    let x: Result<Vec<Interval>, Error> =
+                        s.split(',').map(|t| parse_region(&t)).collect();
+                    x
+                })
+                .transpose()?,
             path_config: matches.value_of("config").map(|s| s.to_string()),
             paths_input: match matches.values_of("input") {
                 Some(xs) => xs.map(String::from).collect(),
@@ -48,10 +61,10 @@ impl Options {
                 None => return Err(Error::OptionMissing()),
             },
             overwrite: matches.occurrences_of("overwrite") > 0,
-            setting: match matches.value_of("setting") {
-                Some(x) => String::from(x),
-                None => return Err(Error::OptionMissing()),
-            },
+            setting: matches
+                .value_of("setting")
+                .unwrap_or("per_tool_pesr")
+                .to_string(),
         })
     }
 }
@@ -85,18 +98,19 @@ fn check_contigs(paths_input: &[String]) -> Result<(), Error> {
 }
 
 /// Extract StandardizedRecords from VCF file at the given path.
-fn load_std_records(path: &str, contig_name: &str) -> Result<Vec<StandardizedRecord>, Error> {
+fn load_std_records(path: &str, region: &Interval) -> Result<Vec<StandardizedRecord>, Error> {
     let mut result: Vec<StandardizedRecord> = Vec::new();
     let mut reader = bcf::IndexedReader::from_path(path)?;
     let mut record = reader.empty_record();
 
-    let rid = reader.header().name2rid(contig_name.as_bytes())?;
-    if reader.fetch(rid, 0, 1_000_000_000).is_ok() {
-        loop {
-            if !reader.read(&mut record)? {
-                break; // done
-            }
+    let rid = reader.header().name2rid(region.contig().as_bytes())?;
+    if reader
+        .fetch(rid, region.range().start, region.range().end)
+        .is_ok()
+    {
+        while reader.read(&mut record)? {
             result.push(StandardizedRecord::from_bcf_record(&mut record)?);
+            debug!("=> {:?}", &result.last());
         }
     };
 
@@ -316,7 +330,7 @@ fn perform_clustering(options: &Options, config: &Config) -> Result<(), Error> {
     check_contigs(&options.paths_input)?;
 
     // Open the output files (piggy-back reading of contig names from first input file).
-    let (contig_names, mut writer) = {
+    let (regions, mut writer) = {
         let reader = bcf::IndexedReader::from_path(&options.paths_input[0])?;
         let header = {
             let mut header = build_vcf_header(reader.header())?;
@@ -346,8 +360,17 @@ fn perform_clustering(options: &Options, config: &Config) -> Result<(), Error> {
         };
         let guessed = guess_bcf_format(&options.path_output);
 
+        let regions = if let Some(regions) = &options.regions {
+            regions.clone()
+        } else {
+            collect_contigs(&reader)?
+                .iter()
+                .map(|name| Interval::new(name.clone(), 0..10_000_000_000))
+                .collect()
+        };
+
         (
-            collect_contigs(&reader)?,
+            regions,
             bcf::Writer::from_path(
                 &options.path_output,
                 &header,
@@ -357,12 +380,12 @@ fn perform_clustering(options: &Options, config: &Config) -> Result<(), Error> {
         )
     };
 
-    for contig_name in contig_names {
+    for region in &regions {
         // Extract StandardizedRecord data for all contigs from all files.
         let records = {
             let mut records = Vec::new();
             for path in &options.paths_input {
-                let mut result = load_std_records(&path, &contig_name)?;
+                let mut result = load_std_records(&path, region)?;
                 records.append(&mut result);
             }
             records
@@ -389,8 +412,9 @@ fn main() -> Result<(), Error> {
             Arg::from_usage("-v... 'Increase verbosity'"),
             Arg::from_usage("--overwrite 'Allow overwriting of output file'"),
             Arg::from_usage("-c, --config=[FILE] 'Sets a custom config file'"),
+            Arg::from_usage("-r, --regions=[REGIONS] 'comma-separated list of regions'"),
             Arg::from_usage(
-                "-s, --setting=<SETTING> 'Use cluster settings name, one of \
+                "-s, --setting=[SETTING] 'Use cluster settings name, one of \
                 {per_tool_pesr,per_tool_doc}, default per_tool_pesr'",
             ),
             Arg::from_usage("<input>... 'input file to read from'"),
@@ -400,7 +424,11 @@ fn main() -> Result<(), Error> {
     let options = Options::from_arg_matches(&matches)?;
 
     // Output file must not exist yet.
-    if Path::new(&options.path_output).exists() && !options.overwrite {
+    if options.path_output != "-"
+        && options.path_output != "/dev/stdout"
+        && Path::new(&options.path_output).exists()
+        && !options.overwrite
+    {
         return Err(Error::OutputFileExists());
     }
 
@@ -414,10 +442,10 @@ fn main() -> Result<(), Error> {
                 message
             ))
         })
-        .level(if matches.is_present("verbose") {
-            LevelFilter::Debug
-        } else {
-            LevelFilter::Info
+        .level(match matches.occurrences_of("verbose").cmp(&1) {
+            Ordering::Less => LevelFilter::Info,
+            Ordering::Equal => LevelFilter::Debug,
+            Ordering::Greater => LevelFilter::Trace,
         })
         .chain(std::io::stderr())
         .apply()
@@ -446,6 +474,7 @@ fn main() -> Result<(), Error> {
 
 #[cfg(test)]
 mod tests {
+    use super::Interval;
     use pretty_assertions::assert_eq;
     use std::fs;
     use tempdir::TempDir;
@@ -456,11 +485,13 @@ mod tests {
         paths_input: &Vec<String>,
         path_expected: &str,
         config_str: &str,
+        regions: &Option<Vec<Interval>>,
     ) -> Result<(), super::Error> {
         let path_output = String::from(tmp_dir.path().join("out.vcf").to_str().unwrap());
         let options = super::Options {
             setting: "per_tool_pesr".to_string(),
             verbosity: 1, // disable progress bar
+            regions: regions.clone(),
             path_config: None,
             paths_input: paths_input.clone(),
             path_output: path_output.clone(),
@@ -489,6 +520,7 @@ mod tests {
             ],
             "./src/tests/data/ex-delly.expected.vcf",
             "stdvcf_apply_filters = true",
+            &None,
         )?;
         Ok(())
     }

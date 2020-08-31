@@ -246,7 +246,11 @@ fn main() -> Result<(), Error> {
     let options = Options::from_arg_matches(&matches)?;
 
     // Output file must not exist yet.
-    if Path::new(&options.path_output).exists() && !options.overwrite {
+    if options.path_output != "-"
+        && options.path_output != "/dev/stdout"
+        && Path::new(&options.path_output).exists()
+        && !options.overwrite
+    {
         return Err(Error::OutputFileExists());
     }
 

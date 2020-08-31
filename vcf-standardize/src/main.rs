@@ -2,14 +2,16 @@
 use std::fs;
 use std::path::Path;
 
+use bio_types::genome::{AbstractInterval, Interval};
 use clap::{App, Arg, ArgMatches};
 use git_version::git_version;
 use indicatif::{ProgressBar, ProgressStyle};
 use log::{debug, info, LevelFilter};
 use rust_htslib::{bcf, bcf::Read};
 
-use lib_common::bcf::{build_vcf_header, guess_bcf_format};
+use lib_common::bcf::{build_vcf_header, collect_contigs, guess_bcf_format};
 use lib_common::error::Error;
+use lib_common::parse_region;
 use lib_common::Algorithm;
 use lib_config::Config;
 
@@ -18,6 +20,8 @@ use lib_config::Config;
 struct Options {
     /// Verbosity level
     verbosity: u64,
+    /// List of regions to call.
+    regions: Option<Vec<Interval>>,
     /// Path to configuration file to use,
     path_config: Option<String>,
     /// Path to input file.
@@ -32,6 +36,14 @@ impl Options {
     pub fn from_arg_matches<'a>(matches: &ArgMatches<'a>) -> Result<Self, Error> {
         Ok(Options {
             verbosity: matches.occurrences_of("v"),
+            regions: matches
+                .value_of("regions")
+                .map(|s| {
+                    let x: Result<Vec<Interval>, Error> =
+                        s.split(',').map(|t| parse_region(&t)).collect();
+                    x
+                })
+                .transpose()?,
             path_config: matches.value_of("config").map(|s| s.to_string()),
             path_input: match matches.value_of("input") {
                 Some(x) => String::from(x),
@@ -154,7 +166,7 @@ fn summarize_record(
 /// Main entry point after parsing command line and loading options.
 fn perform_extraction(options: &Options, config: &Config) -> Result<(), Error> {
     info!("Starting to extract BCF file...");
-    let mut reader = bcf::Reader::from_path(&options.path_input)?;
+    let mut reader = bcf::IndexedReader::from_path(&options.path_input)?;
     let header = build_vcf_header(reader.header())?;
     let guessed = guess_bcf_format(&options.path_output);
     let mut writer = bcf::Writer::from_path(
@@ -176,31 +188,47 @@ fn perform_extraction(options: &Options, config: &Config) -> Result<(), Error> {
         None
     };
 
+    let regions = if let Some(regions) = &options.regions {
+        regions.clone()
+    } else {
+        collect_contigs(&reader)?
+            .iter()
+            .map(|name| Interval::new(name.clone(), 0..10_000_000_000))
+            .collect()
+    };
+
     let mut counter = 0;
     let mut buffer_read = reader.empty_record();
-    loop {
-        if !reader.read(&mut buffer_read)? {
-            break; // done
-        }
-        let mut buffer_write = writer.empty_record();
-        if summarize_record(
-            &mut buffer_read,
-            reader.header(),
-            &mut buffer_write,
-            writer.header(),
-            &config,
-        )? {
-            writer.write(&buffer_write)?;
-        }
+    for region in &regions {
+        let rid = reader.header().name2rid(region.contig().as_bytes())?;
+        reader.fetch(rid, region.range().start, region.range().end)?;
 
-        counter += 1;
-        if counter % 1_000 == 0 {
-            if let Some(spinner) = &spinner {
-                spinner.set_message(&format!(
-                    "currently at {}:{}",
-                    &std::str::from_utf8(reader.header().rid2name(buffer_read.rid().unwrap())?)?,
-                    buffer_read.pos() + 1
-                ));
+        loop {
+            if !reader.read(&mut buffer_read)? {
+                break; // done
+            }
+            let mut buffer_write = writer.empty_record();
+            if summarize_record(
+                &mut buffer_read,
+                reader.header(),
+                &mut buffer_write,
+                writer.header(),
+                &config,
+            )? {
+                writer.write(&buffer_write)?;
+            }
+
+            counter += 1;
+            if counter % 1_000 == 0 {
+                if let Some(spinner) = &spinner {
+                    spinner.set_message(&format!(
+                        "currently at {}:{}",
+                        &std::str::from_utf8(
+                            reader.header().rid2name(buffer_read.rid().unwrap())?
+                        )?,
+                        buffer_read.pos() + 1
+                    ));
+                }
             }
         }
     }
@@ -222,6 +250,7 @@ fn main() -> Result<(), Error> {
             Arg::from_usage("-v... 'Increase verbosity'"),
             Arg::from_usage("--overwrite 'Allow overwriting of output file'"),
             Arg::from_usage("-c, --config=[FILE] 'Sets a custom config file'"),
+            Arg::from_usage("-r, --regions=[REGIONS] 'comma-separated list of regions'"),
             Arg::from_usage("<input> 'input file to read from'"),
             Arg::from_usage("<output> 'output file to write to'"),
         ])
@@ -229,7 +258,11 @@ fn main() -> Result<(), Error> {
     let options = Options::from_arg_matches(&matches)?;
 
     // Output file must not exist yet.
-    if Path::new(&options.path_output).exists() && !options.overwrite {
+    if options.path_output != "-"
+        && options.path_output != "/dev/stdout"
+        && Path::new(&options.path_output).exists()
+        && !options.overwrite
+    {
         return Err(Error::OutputFileExists());
     }
 
@@ -275,6 +308,7 @@ fn main() -> Result<(), Error> {
 
 #[cfg(test)]
 mod tests {
+    use super::Interval;
     use pretty_assertions::assert_eq;
     use std::fs;
     use tempdir::TempDir;
@@ -285,10 +319,12 @@ mod tests {
         path_input: &str,
         path_expected: &str,
         config_str: &str,
+        regions: &Option<Vec<Interval>>,
     ) -> Result<(), super::Error> {
         let path_output = String::from(tmp_dir.path().join("out.vcf").to_str().unwrap());
         let options = super::Options {
             verbosity: 1, // disable progress bar
+            regions: regions.clone(),
             path_config: None,
             path_input: String::from(path_input),
             path_output: path_output.clone(),
@@ -311,9 +347,10 @@ mod tests {
         let tmp_dir = TempDir::new("tests")?;
         _perform_extraction_and_test(
             &tmp_dir,
-            "./src/tests/data/ex-delly-filter.vcf",
+            "./src/tests/data/ex-delly-filter.vcf.gz",
             "./src/tests/data/ex-delly-filter.expected.vcf",
             "stdvcf_apply_filters = true",
+            &None,
         )?;
         Ok(())
     }
@@ -323,9 +360,10 @@ mod tests {
         let tmp_dir = TempDir::new("tests")?;
         _perform_extraction_and_test(
             &tmp_dir,
-            "./src/tests/data/ex-delly-nofilter.vcf",
+            "./src/tests/data/ex-delly-nofilter.vcf.gz",
             "./src/tests/data/ex-delly-nofilter.expected.vcf",
             "stdvcf_apply_filters = false",
+            &None,
         )?;
         Ok(())
     }

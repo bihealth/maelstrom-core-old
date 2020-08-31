@@ -15,6 +15,9 @@ pub enum Error {
     /// Incorrect cluster setting name.
     #[error("unknown cluster setting name")]
     UnknownClusterSettingName(),
+    /// Invalid region.
+    #[error("invalid region")]
+    InvalidRegion(),
     /// Problem with file I/O.
     #[error("problem with I/O")]
     Io {
@@ -57,5 +60,17 @@ pub enum Error {
     JsonDeserializationError {
         #[from]
         source: serde_json::error::Error, // TODO: add experimental backtrace feature?
+    },
+    /// Problem with parsing float.
+    #[error("problem with parsing float")]
+    ParseFloatError {
+        #[from]
+        source: std::num::ParseFloatError, // TODO: add experimental backtrace feature?
+    },
+    /// Problem with parsing int.
+    #[error("problem with parsing int")]
+    ParseIntError {
+        #[from]
+        source: std::num::ParseIntError, // TODO: add experimental backtrace feature?
     },
 }

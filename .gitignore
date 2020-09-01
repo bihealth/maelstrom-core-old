@@ -1,3 +1,6 @@
+/perf.*
+/out.*
+
 target
 Cargo.lock
 .DS_store

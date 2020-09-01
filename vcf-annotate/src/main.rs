@@ -270,7 +270,7 @@ fn count_evidence(
 
     (
         left_prs.intersection(&right_prs).count(),
-        left_srs.union(&right_srs).count(),
+        left_srs.intersection(&right_srs).count(),
     )
 }
 

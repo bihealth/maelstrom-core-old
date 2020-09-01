@@ -118,7 +118,11 @@ fn load_read_evidence(
 ) -> Result<(), Error> {
     info!("loading evidence for {:?}...", interval);
     let mut reader = read_evidence::IndexedReader::from_path(&path_pesr_evidence)?;
-    if !reader.fetch(&interval.contig(), interval.range().start, interval.range().end)? {
+    if !reader.fetch(
+        &interval.contig(),
+        interval.range().start,
+        interval.range().end,
+    )? {
         return Ok(());
     }
 
@@ -139,13 +143,20 @@ fn load_read_evidence(
     while let Some(record) = reader.read_record()? {
         debug!("record = {:?}", &record);
         let location = match &record {
-            read_evidence::Record::PairedRead { contig1, start1, end1, .. } => Contig::new(
+            read_evidence::Record::PairedRead {
+                contig1,
+                start1,
+                end1,
+                ..
+            } => Contig::new(
                 contig1.clone(),
                 *start1 as isize,
                 (end1 - start1) as usize,
                 NoStrand::Unknown,
             ),
-            read_evidence::Record::SplitRead { contig, start, end, .. } => Contig::new(
+            read_evidence::Record::SplitRead {
+                contig, start, end, ..
+            } => Contig::new(
                 contig.clone(),
                 *start as isize,
                 (end - start) as usize,
@@ -445,12 +456,7 @@ fn perform_annotation(options: &Options, config: &Config) -> Result<(), Error> {
         let mut read_evidence: AnnotMap<String, read_evidence::Record> = AnnotMap::new();
         for region in &regions {
             debug!("region = {:?}", &region);
-            load_read_evidence(
-                &mut read_evidence,
-                region,
-                path_pesr_evidence,
-                &options,
-            )?;
+            load_read_evidence(&mut read_evidence, region, path_pesr_evidence, &options)?;
         }
         debug!("evidence: {:?}", &read_evidence);
         Some(read_evidence)

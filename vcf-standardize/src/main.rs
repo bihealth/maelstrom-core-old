@@ -197,16 +197,13 @@ fn perform_extraction(options: &Options, config: &Config) -> Result<(), Error> {
             .collect()
     };
 
-    let mut counter = 0;
+    let mut counter: usize = 0;
     let mut buffer_read = reader.empty_record();
     for region in &regions {
         let rid = reader.header().name2rid(region.contig().as_bytes())?;
         reader.fetch(rid, region.range().start, region.range().end)?;
 
-        loop {
-            if !reader.read(&mut buffer_read)? {
-                break; // done
-            }
+        while reader.read(&mut buffer_read)? {
             let mut buffer_write = writer.empty_record();
             if summarize_record(
                 &mut buffer_read,
@@ -276,7 +273,7 @@ fn main() -> Result<(), Error> {
                 message
             ))
         })
-        .level(if matches.is_present("verbose") {
+        .level(if matches.is_present("v") {
             LevelFilter::Debug
         } else {
             LevelFilter::Info

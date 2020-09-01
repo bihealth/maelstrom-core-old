@@ -7,16 +7,19 @@ use bio::data_structures::annot_map::AnnotMap;
 use bio_types::annot::contig::Contig;
 use bio_types::annot::contig::SeqContigStranded;
 use bio_types::annot::loc::Loc;
+use bio_types::genome::{AbstractInterval, Interval};
 use bio_types::strand::NoStrand;
 use bio_types::strand::ReqStrand;
 use clap::{App, Arg, ArgMatches};
 use git_version::git_version;
+use indicatif::{ProgressBar, ProgressStyle};
 use itertools::sorted;
-// use indicatif::{ProgressBar, ProgressStyle};
 use log::{debug, info, LevelFilter};
 use rust_htslib::{bcf, bcf::Read};
 
+use lib_common::bcf::collect_contigs;
 use lib_common::error::Error;
+use lib_common::parse_region;
 use lib_common::read_evidence;
 use lib_common::read_evidence::Sides;
 use lib_common::read_evidence::Strand;
@@ -28,6 +31,8 @@ use lib_config::Config;
 struct Options {
     /// Verbosity level
     verbosity: u64,
+    /// List of regions to call.
+    regions: Option<Vec<Interval>>,
     /// Path to configuration file to use,
     path_config: Option<String>,
     /// Path to input PE/SR evidence file.
@@ -50,6 +55,14 @@ impl Options {
     pub fn from_arg_matches<'a>(matches: &ArgMatches<'a>) -> Result<Self, Error> {
         Ok(Options {
             verbosity: matches.occurrences_of("v"),
+            regions: matches
+                .value_of("regions")
+                .map(|s| {
+                    let x: Result<Vec<Interval>, Error> =
+                        s.split(',').map(|t| parse_region(&t)).collect();
+                    x
+                })
+                .transpose()?,
             path_config: matches.value_of("config").map(|s| s.to_string()),
             path_pesr_evidence: matches
                 .value_of("path-pesr-evidence")
@@ -96,35 +109,62 @@ mod mtx_io {
     }
 }
 
-/// Load all evidence records for the given contig.
-fn load_contig_evidence(
+/// Load all evidence records for the given region.
+fn load_read_evidence(
     annot_map: &mut AnnotMap<String, read_evidence::Record>,
-    contig: &str,
+    interval: &Interval,
     path_pesr_evidence: &str,
+    options: &Options,
 ) -> Result<(), Error> {
+    info!("loading evidence for {:?}...", interval);
     let mut reader = read_evidence::IndexedReader::from_path(&path_pesr_evidence)?;
-    if !reader.fetch(contig, 0, 1_000_000_000)? {
+    if !reader.fetch(&interval.contig(), interval.range().start, interval.range().end)? {
         return Ok(());
     }
 
+    let spinner_style = ProgressStyle::default_spinner()
+        .tick_chars(".oO@* ")
+        .template("{prefix:.bold.dim} {spinner} {msg} {elapsed}");
+    let spinner = if options.verbosity == 0 {
+        let spinner = ProgressBar::new_spinner();
+        spinner.set_style(spinner_style);
+        spinner.enable_steady_tick(100);
+        Some(spinner)
+    } else {
+        None
+    };
+
+    let mut counter: usize = 0;
+
     while let Some(record) = reader.read_record()? {
         debug!("record = {:?}", &record);
-        let location = match record {
-            read_evidence::Record::PairedRead { start1, end1, .. } => Contig::new(
-                contig.to_string(),
-                start1 as isize,
+        let location = match &record {
+            read_evidence::Record::PairedRead { contig1, start1, end1, .. } => Contig::new(
+                contig1.clone(),
+                *start1 as isize,
                 (end1 - start1) as usize,
                 NoStrand::Unknown,
             ),
-            read_evidence::Record::SplitRead { start, end, .. } => Contig::new(
-                contig.to_string(),
-                start as isize,
+            read_evidence::Record::SplitRead { contig, start, end, .. } => Contig::new(
+                contig.clone(),
+                *start as isize,
                 (end - start) as usize,
                 NoStrand::Unknown,
             ),
         };
         annot_map.insert_at(record, &location);
+
+        counter += 1;
+        if counter % 1__000 == 0 {
+            if let Some(spinner) = &spinner {
+                spinner.set_message(&format!("currently at {}", &location.contig(),));
+            }
+        }
     }
+    if let Some(spinner) = &spinner {
+        spinner.finish_and_clear();
+    }
+    info!("... done loading evidence for {:?}", &interval);
 
     Ok(())
 }
@@ -228,7 +268,7 @@ fn annotate_pesr(
     options: &Options,
     config: &Config,
     read_evidence: &AnnotMap<String, read_evidence::Record>,
-    contig_name: &str,
+    region: &Interval,
 ) -> Result<Vec<EvidenceCount>, Error> {
     fn f(a: isize, b: isize) -> isize {
         if b > a {
@@ -240,9 +280,9 @@ fn annotate_pesr(
 
     let mut reader = bcf::IndexedReader::from_path(&options.path_input)?;
     let res = reader.fetch(
-        reader.header().name2rid(contig_name.as_bytes())?,
-        0,
-        1_000_000_000,
+        reader.header().name2rid(region.contig().as_bytes())?,
+        region.range().start,
+        region.range().end,
     );
     match res {
         Err(rust_htslib::bcf::errors::Error::Seek { .. }) => return Ok(vec![]),
@@ -328,7 +368,7 @@ fn annotate_pesr(
 fn annotate_doc(
     _options: &Options,
     _config: &Config,
-    _contig_name: &str,
+    _region: &Interval,
 ) -> Result<Vec<(String, f64)>, Error> {
     panic!("DoC analysis not implemented yet!");
     // Ok(vec![])
@@ -338,7 +378,7 @@ fn annotate_doc(
 fn annotate_baf(
     _options: &Options,
     _config: &Config,
-    _contig_name: &str,
+    _region: &Interval,
 ) -> Result<Vec<(String, f64)>, Error> {
     panic!("BAF analysis not implemented yet!");
     // Ok(vec![])
@@ -391,13 +431,26 @@ fn perform_annotation(options: &Options, config: &Config) -> Result<(), Error> {
 
     let reader = bcf::IndexedReader::from_path(&options.path_input)?;
 
+    let regions = if let Some(regions) = &options.regions {
+        regions.clone()
+    } else {
+        collect_contigs(&reader)?
+            .iter()
+            .map(|name| Interval::new(name.clone(), 0..10_000_000_000))
+            .collect()
+    };
+
     let read_evidence = if let Some(path_pesr_evidence) = &options.path_pesr_evidence {
         info!("Loading read-based evidence...");
         let mut read_evidence: AnnotMap<String, read_evidence::Record> = AnnotMap::new();
-        for rid in 0..reader.header().contig_count() {
-            let contig_name = std::str::from_utf8(reader.header().rid2name(rid)?)?.to_string();
-            debug!("contig_name = {}", &contig_name);
-            load_contig_evidence(&mut read_evidence, &contig_name, path_pesr_evidence)?;
+        for region in &regions {
+            debug!("region = {:?}", &region);
+            load_read_evidence(
+                &mut read_evidence,
+                region,
+                path_pesr_evidence,
+                &options,
+            )?;
         }
         debug!("evidence: {:?}", &read_evidence);
         Some(read_evidence)
@@ -405,13 +458,9 @@ fn perform_annotation(options: &Options, config: &Config) -> Result<(), Error> {
         None
     };
 
-    info!("Processing records from all contigs...");
-    for rid in 0..reader.header().contig_count() {
-        let contig_name = std::str::from_utf8(reader.header().rid2name(rid)?)?.to_string();
-        info!(
-            "Processing contig {}",
-            std::str::from_utf8(reader.header().rid2name(rid)?)?
-        );
+    info!("Processing regions/contigs...");
+    for region in &regions {
+        info!("Processing contig {:?}", region);
 
         if let (Some(pe_writer), Some(sr_writer)) = (&mut pe_writer, &mut sr_writer) {
             for EvidenceCount {
@@ -419,25 +468,19 @@ fn perform_annotation(options: &Options, config: &Config) -> Result<(), Error> {
                 pe_count,
                 sr_count,
             } in sorted(
-                annotate_pesr(
-                    &options,
-                    &config,
-                    &read_evidence.as_ref().unwrap(),
-                    &contig_name,
-                )?
-                .iter(),
+                annotate_pesr(&options, &config, &read_evidence.as_ref().unwrap(), &region)?.iter(),
             ) {
                 pe_writer.write(&sv_id, *pe_count as f64)?;
                 sr_writer.write(&sv_id, *sr_count as f64)?;
             }
         }
         if let Some(doc_writer) = &mut doc_writer {
-            for (sv_id, score) in annotate_doc(&options, &config, &contig_name)?.iter() {
+            for (sv_id, score) in annotate_doc(&options, &config, &region)?.iter() {
                 doc_writer.write(&sv_id, *score)?;
             }
         }
         if let Some(baf_writer) = &mut baf_writer {
-            for (sv_id, score) in annotate_baf(&options, &config, &contig_name)?.iter() {
+            for (sv_id, score) in annotate_baf(&options, &config, &region)?.iter() {
                 baf_writer.write(&sv_id, *score)?;
             }
         }
@@ -457,6 +500,7 @@ fn main() -> Result<(), Error> {
             Arg::from_usage("-v... 'Increase verbosity'"),
             Arg::from_usage("--overwrite 'Allow overwriting of output file'"),
             Arg::from_usage("-c, --config=[FILE] 'Sets a custom config file'"),
+            Arg::from_usage("-r, --regions=[REGIONS] 'comma-separated list of regions'"),
             Arg::from_usage("--path-pesr-evidence=[FILE] 'Path to PE/SR evidence file'"),
             Arg::from_usage("--path-doc-evidence=[FILE] 'Path to PE/SR evidence file'"),
             Arg::from_usage("--path-snv-vcf=[FILE] 'Path to PE/SR evidence file'"),
@@ -497,7 +541,7 @@ fn main() -> Result<(), Error> {
                 message
             ))
         })
-        .level(if matches.is_present("verbose") {
+        .level(if matches.is_present("v") {
             LevelFilter::Debug
         } else {
             LevelFilter::Info
@@ -528,6 +572,7 @@ fn main() -> Result<(), Error> {
 
 #[cfg(test)]
 mod tests {
+    use super::Interval;
     use pretty_assertions::assert_eq;
     use std::fs;
     use tempdir::TempDir;
@@ -541,10 +586,12 @@ mod tests {
         path_snv_vcf: Option<String>,
         path_input: &str,
         path_expected_prefix: &str,
+        regions: &Option<Vec<Interval>>,
     ) -> Result<(), super::Error> {
         let prefix_output = String::from(tmp_dir.path().join("out").to_str().unwrap());
         let options = super::Options {
             verbosity: 1, // disable progress bar
+            regions: regions.clone(),
             path_config: None,
             path_pesr_evidence: path_pesr_evidence,
             path_doc_evidence: path_doc_evidence,
@@ -599,6 +646,7 @@ mod tests {
             None, // Some(String::from("./src/tests/data/ex-delly-snv.vcf.gz")),
             "./src/tests/data/ex-delly-svs.vcf.gz",
             "./src/tests/data/ex-delly.expected",
+            &None,
         )?;
         Ok(())
     }

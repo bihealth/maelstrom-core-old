@@ -155,7 +155,7 @@ fn main() -> Result<(), Error> {
                 message
             ))
         })
-        .level(if matches.is_present("verbose") {
+        .level(if matches.is_present("v") {
             LevelFilter::Debug
         } else {
             LevelFilter::Info

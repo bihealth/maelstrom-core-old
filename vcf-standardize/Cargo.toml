@@ -17,6 +17,7 @@ lib-common = { path = "../lib-common" }
 lib-config = { path = "../lib-config" }
 thiserror = "1"
 toml = "0.5"
+regex = "1"
 
 [dev-dependencies]
 pretty_assertions = "0.6"

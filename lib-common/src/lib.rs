@@ -16,6 +16,8 @@ use error::Error;
 pub enum Algorithm {
     /// Delly2
     Delly,
+    /// Manta
+    Manta,
 }
 
 /// Parse string into region.

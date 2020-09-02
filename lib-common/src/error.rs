@@ -18,6 +18,9 @@ pub enum Error {
     /// Invalid region.
     #[error("invalid region")]
     InvalidRegion(),
+    /// Invalid breakend.
+    #[error("invalid BND ALT string")]
+    InvalidBND(),
     /// Problem with file I/O.
     #[error("problem with I/O")]
     Io {

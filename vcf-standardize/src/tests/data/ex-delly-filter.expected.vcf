@@ -1,8 +1,8 @@
 ##fileformat=VCFv4.2
 ##FILTER=<ID=PASS,Description="All filters passed">
 ##contig=<ID=1,length=249250621>
-##contig=<ID=2,length=249250621>
-##contig=<ID=3,length=249250621>
+##contig=<ID=2,length=243199373>
+##contig=<ID=3,length=198022430>
 ##ALT=<ID=DEL,length=Deletion>
 ##ALT=<ID=DUP,length=Duplication>
 ##ALT=<ID=INV,length=Inversion>
@@ -15,7 +15,8 @@
 ##INFO=<ID=ALGORITHMS,Number=.,Type=String,Description=Source algorithms>
 ##FORMAT=<ID=GT,Number=1,Type=String,Description=Genotype>
 ##FORMAT=<ID=delly,Number=1,Type=Integer,Description=Called by Delly>
+##FORMAT=<ID=manta,Number=1,Type=Integer,Description=Called by Manta>
 #CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	A15-N1-DNA1-WGS1
 1	10001	.	A	<DUP>	0	.	END2=20000;CHR2=1;SVTYPE=DUP;STRANDS=-+;SVLEN=10000;ALGORITHMS=delly	GT:delly	0/1:1
-1	10003	.	A	<DEL>	0	.	END2=20000;CHR2=1;SVTYPE=DUP;STRANDS=-+;SVLEN=9998;ALGORITHMS=delly	GT:delly	0/1:1
+1	10003	.	A	<DEL>	0	.	END2=20000;CHR2=1;SVTYPE=DEL;STRANDS=-+;SVLEN=9998;ALGORITHMS=delly	GT:delly	0/1:1
 3	10006	.	G	G[2:10007[	0	.	END2=33141554;CHR2=2;SVTYPE=BND;STRANDS=+-;SVLEN=-1;ALGORITHMS=delly	GT:delly	1/1:1

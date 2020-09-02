@@ -15,6 +15,7 @@
 ##INFO=<ID=ALGORITHMS,Number=.,Type=String,Description=Source algorithms>
 ##FORMAT=<ID=GT,Number=1,Type=String,Description=Genotype>
 ##FORMAT=<ID=delly,Number=1,Type=Integer,Description=Called by Delly>
+##FORMAT=<ID=manta,Number=1,Type=Integer,Description=Called by Manta>
 #CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	sample-1	sample-2
 1	10001	SV00000001	N	<DEL>	0	.	END2=20001;CHR2=1;SVTYPE=DEL;STRANDS=-+;SVLEN=10001;ALGORITHMS=delly	GT:delly	0/1:1	0/1:1
 1	10003	SV00000002	N	<DUP>	0	.	END2=20000;CHR2=1;SVTYPE=DUP;STRANDS=-+;SVLEN=9998;ALGORITHMS=delly	GT:delly	0/1:1	./.:0

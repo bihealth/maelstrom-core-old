@@ -82,6 +82,7 @@ pub fn build_vcf_header(template: &bcf::header::HeaderView) -> Result<bcf::Heade
     let formats = vec![
         ("GT", "1", "String", "Genotype"),
         ("delly", "1", "Integer", "Called by Delly"),
+        ("manta", "1", "Integer", "Called by Manta"),
     ];
     for (id, number, type_, desc) in formats {
         header.push_record(

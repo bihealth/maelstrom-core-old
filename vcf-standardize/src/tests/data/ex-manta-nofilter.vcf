@@ -1,0 +1,50 @@
+##fileformat=VCFv4.1
+##fileDate=20200705
+##source=GenerateSVCandidates 1.2.1
+##contig=<ID=1,length=249250621>
+##contig=<ID=2,length=243199373>
+##contig=<ID=3,length=198022430>
+##INFO=<ID=IMPRECISE,Number=0,Type=Flag,Description="Imprecise structural variation">
+##INFO=<ID=SVTYPE,Number=1,Type=String,Description="Type of structural variant">
+##INFO=<ID=SVLEN,Number=.,Type=Integer,Description="Difference in length between REF and ALT alleles">
+##INFO=<ID=END,Number=1,Type=Integer,Description="End position of the variant described in this record">
+##INFO=<ID=CIPOS,Number=2,Type=Integer,Description="Confidence interval around POS">
+##INFO=<ID=CIEND,Number=2,Type=Integer,Description="Confidence interval around END">
+##INFO=<ID=CIGAR,Number=A,Type=String,Description="CIGAR alignment for each alternate indel allele">
+##INFO=<ID=MATEID,Number=.,Type=String,Description="ID of mate breakend">
+##INFO=<ID=EVENT,Number=1,Type=String,Description="ID of event associated to breakend">
+##INFO=<ID=HOMLEN,Number=.,Type=Integer,Description="Length of base pair identical homology at event breakpoints">
+##INFO=<ID=HOMSEQ,Number=.,Type=String,Description="Sequence of base pair identical homology at event breakpoints">
+##INFO=<ID=SVINSLEN,Number=.,Type=Integer,Description="Length of insertion">
+##INFO=<ID=SVINSSEQ,Number=.,Type=String,Description="Sequence of insertion">
+##INFO=<ID=LEFT_SVINSSEQ,Number=.,Type=String,Description="Known left side of insertion for an insertion of unknown length">
+##INFO=<ID=RIGHT_SVINSSEQ,Number=.,Type=String,Description="Known right side of insertion for an insertion of unknown length">
+##INFO=<ID=INV3,Number=0,Type=Flag,Description="Inversion breakends open 3' of reported location">
+##INFO=<ID=INV5,Number=0,Type=Flag,Description="Inversion breakends open 5' of reported location">
+##INFO=<ID=BND_DEPTH,Number=1,Type=Integer,Description="Read depth at local translocation breakend">
+##INFO=<ID=MATE_BND_DEPTH,Number=1,Type=Integer,Description="Read depth at remote translocation mate breakend">
+##INFO=<ID=JUNCTION_QUAL,Number=1,Type=Integer,Description="If the SV junction is part of an EVENT (ie. a multi-adjacency variant), this field provides the QUAL value for the adjacency in question only">
+##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
+##FORMAT=<ID=FT,Number=1,Type=String,Description="Sample filter, 'PASS' indicates that all filters have passed for this sample">
+##FORMAT=<ID=GQ,Number=1,Type=Float,Description="Genotype Quality">
+##FORMAT=<ID=PL,Number=G,Type=Integer,Description="Normalized, Phred-scaled likelihoods for genotypes as defined in the VCF specification">
+##FORMAT=<ID=PR,Number=.,Type=Integer,Description="Spanning paired-read support for the ref and alt alleles in the order listed">
+##FORMAT=<ID=SR,Number=.,Type=Integer,Description="Split reads for the ref and alt alleles in the order listed, for reads where P(allele|read)>0.999">
+##FILTER=<ID=Ploidy,Description="For DEL & DUP variants, the genotypes of overlapping variants (with similar size) are inconsistent with diploid expectation">
+##FILTER=<ID=MaxDepth,Description="Depth is greater than 3x the median chromosome depth near one or both variant breakends">
+##FILTER=<ID=MaxMQ0Frac,Description="For a small variant (<1000 bases), the fraction of reads in all samples with MAPQ0 around either breakend exceeds 0.4">
+##FILTER=<ID=NoPairSupport,Description="For variants significantly larger than the paired read fragment size, no paired reads support the alternate allele in any sample.">
+##FILTER=<ID=MinQUAL,Description="QUAL score is less than 20">
+##FILTER=<ID=MinGQ,Description="GQ score is less than 15 (filter applied at sample level and record level if all samples are filtered)">
+##ALT=<ID=BND,Description="Translocation Breakend">
+##ALT=<ID=INV,Description="Inversion">
+##ALT=<ID=DEL,Description="Deletion">
+##ALT=<ID=INS,Description="Insertion">
+##ALT=<ID=DUP:TANDEM,Description="Tandem Duplication">
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	A15-N1-DNA1-WGS1
+1	10000	MantaDEL:0	NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN	N	999	MaxMQ0Frac	END=10125;SVTYPE=DEL;SVLEN=-225;CIGAR=225D	GT:FT:GQ:PL:PR:SR	0/1:PASS:60:999,63,0:0,0:2,30
+1	10001	MantaDUP:1	A	<MantaDUP:TANDEM>	0	PASS	END=20000;SVTYPE=DUP;SVLEN=10000;CIPOS=0,7;CIEND=0,7;HOMLEN=7;HOMSEQ=CCTTCCT	GT:FT:GQ:PL:PR:SR	0/0:PASS:220:0,170,999:32,0:54,0
+1	10002	MantaINV:2	A	<INV>	0	NoPairSupport	END=20000;SVTYPE=INV;SVLEN=9999;CIPOS=0,73;CIEND=-73,0;HOMLEN=73;HOMSEQ=TGCGCGGCGTCCAGGACTACCTCGACCTGCGCAAGGAGCGCATCGTTTACCTCTTCCTGGAGCACTGGCGCCG;INV5	GT:FT:GQ:PL:PR:SR	0/1:PASS:377:427,0,999:80,4:30,16
+1	10003	MantaDEL:3	A	<DEL>	0	PASS	END=20000;SVTYPE=DEL;SVLEN=-1044;CIPOS=0,13;CIEND=0,13;HOMLEN=13;HOMSEQ=GGTGGTTAGGGTC	GT:FT:GQ:PL:PR:SR	0/1:PASS:36:263,0,33:0,0:0,14
+2	10004	MantaBND:4	C	]1:10005]C	.	NoPairSupport	SVTYPE=BND;MantaBND:1007;CIPOS=0,12;HOMLEN=12;HOMSEQ=CCGTCCCGTGTC;BND_DEPTH=35;MATE_BND_DEPTH=22	GT:FT:GQ:PL:PR:SR	0/1:PASS:100:158,0,97:5,0:0,4
+3	10006	MantaBND:5	G	G[2:10007[	.	PASS	SVTYPE=BND;MATEID=MantaBND:1006;CIPOS=0,18;HOMLEN=18;HOMSEQ=CACGCCTGTAATCCCAGC;BND_DEPTH=108;MATE_BND_DEPTH=107	GT:FT:GQ:PL:PR:SR	0/1:PASS:255:305,0,999:52,0:41,13

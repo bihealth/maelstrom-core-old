@@ -1,5 +1,5 @@
 [package]
-name = "snappysv-vcf-standardize"
+name = "maelstrom-vcf-standardize"
 version = "0.1.0"
 authors = ["Manuel Holtgrewe <manuel.holtgrewe@bihealth.de>"]
 edition = "2018"

@@ -266,7 +266,7 @@ fn load_library_properties(
 
 fn main() -> Result<(), Error> {
     // Setup command line parser and parse options.
-    let matches = App::new("snappysv-bam-collect-pesr")
+    let matches = App::new("maelstrom-bam-collect-pesr")
         .version(git_version!())
         .author("Manuel Holtgrewe <manuel.holtgrewe@bihealth.de>")
         .about("Collect paired end and split read evidence from BAM")
@@ -308,7 +308,7 @@ fn main() -> Result<(), Error> {
         .chain(std::io::stderr())
         .apply()
         .unwrap();
-    info!("Starting snappysv-bam-collect-pesr");
+    info!("Starting maelstrom-bam-collect-pesr");
     info!("options: {:?}", &options);
 
     // Parse further settings from configuration file.

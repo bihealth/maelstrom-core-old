@@ -254,7 +254,7 @@ fn extract_reads(
 
 fn main() -> Result<(), Error> {
     // Setup command line parser and parse options.
-    let matches = App::new("snappysv-scanbam")
+    let matches = App::new("maelstrom-scanbam")
         .version(git_version!())
         .author("Manuel Holtgrewe <manuel.holtgrewe@bihealth.de>")
         .about("Scan BAM file for discordant and clipped reads")
@@ -296,7 +296,7 @@ fn main() -> Result<(), Error> {
         .chain(std::io::stderr())
         .apply()
         .unwrap();
-    info!("Starting snappysv-scanbam");
+    info!("Starting maelstrom-scanbam");
     info!("options: {:?}", &options);
 
     // Parse further settings from configuration file.

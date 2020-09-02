@@ -231,7 +231,7 @@ fn perform_collection(options: &Options, config: &Config) -> Result<(), Error> {
 
 fn main() -> Result<(), Error> {
     // Setup command line parser and parse options.
-    let matches = App::new("snappysv-bam-collect-doc")
+    let matches = App::new("maelstrom-bam-collect-doc")
         .version(git_version!())
         .author("Manuel Holtgrewe <manuel.holtgrewe@bihealth.de>")
         .about("Collect depth of coverage evidence from BAM")
@@ -272,7 +272,7 @@ fn main() -> Result<(), Error> {
         .chain(std::io::stderr())
         .apply()
         .unwrap();
-    info!("Starting snappysv-bam-collect-doc");
+    info!("Starting maelstrom-bam-collect-doc");
     info!("options: {:?}", &options);
 
     // Parse further settings from configuration file.

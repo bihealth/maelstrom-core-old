@@ -498,7 +498,7 @@ fn perform_annotation(options: &Options, config: &Config) -> Result<(), Error> {
 
 fn main() -> Result<(), Error> {
     // Setup command line parser and parse options.
-    let matches = App::new("snappysv-vcf-annotate")
+    let matches = App::new("maelstrom-vcf-annotate")
         .version(git_version!())
         .author("Manuel Holtgrewe <manuel.holtgrewe@bihealth.de>")
         .about("Create annotations for VCF file with SVs.")
@@ -555,7 +555,7 @@ fn main() -> Result<(), Error> {
         .chain(std::io::stderr())
         .apply()
         .unwrap();
-    info!("Starting snappysv-vcf-annotate");
+    info!("Starting maelstrom-vcf-annotate");
     info!("options: {:?}", &options);
 
     // Parse further settings from configuration file.

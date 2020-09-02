@@ -122,7 +122,7 @@ fn perform_filtration(options: &Options, config: &Config) -> Result<(), bam::err
 
 fn main() -> Result<(), Error> {
     // Setup command line parser and parse options.
-    let matches = App::new("snappysv-uniqbam")
+    let matches = App::new("maelstrom-uniqbam")
         .version(git_version!())
         .author("Manuel Holtgrewe <manuel.holtgrewe@bihealth.de>")
         .about("Remove duplicate rows from BAM files (as created by scanbam)")
@@ -163,7 +163,7 @@ fn main() -> Result<(), Error> {
         .chain(std::io::stderr())
         .apply()
         .unwrap();
-    info!("Starting snappysv-uniqbam");
+    info!("Starting maelstrom-uniqbam");
     info!("options: {:?}", &options);
 
     // Parse further settings from configuration file.

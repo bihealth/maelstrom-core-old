@@ -239,7 +239,7 @@ fn perform_extraction(options: &Options, config: &Config) -> Result<(), Error> {
 
 fn main() -> Result<(), Error> {
     // Setup command line parser and parse options.
-    let matches = App::new("snappysv-stdvcf")
+    let matches = App::new("maelstrom-stdvcf")
         .version(git_version!())
         .author("Manuel Holtgrewe <manuel.holtgrewe@bihealth.de>")
         .about("Extract and standardize records from tool VCF files")
@@ -281,7 +281,7 @@ fn main() -> Result<(), Error> {
         .chain(std::io::stderr())
         .apply()
         .unwrap();
-    info!("Starting snappysv-stdvcf");
+    info!("Starting maelstrom-stdvcf");
     info!("options: {:?}", &options);
 
     // Parse further settings from configuration file.

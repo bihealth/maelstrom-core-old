@@ -409,7 +409,7 @@ fn perform_clustering(options: &Options, config: &Config) -> Result<(), Error> {
 
 fn main() -> Result<(), Error> {
     // Setup command line parser and parse options.
-    let matches = App::new("snappysv-vcf-cluster")
+    let matches = App::new("maelstrom-vcf-cluster")
         .version(git_version!())
         .author("Manuel Holtgrewe <manuel.holtgrewe@bihealth.de>")
         .about("Extract and standardize records from tool VCF files")
@@ -455,7 +455,7 @@ fn main() -> Result<(), Error> {
         .chain(std::io::stderr())
         .apply()
         .unwrap();
-    info!("Starting snappysv-vcf-cluster");
+    info!("Starting maelstrom-vcf-cluster");
     info!("options: {:?}", &options);
 
     // Parse further settings from configuration file.

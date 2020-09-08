@@ -166,7 +166,7 @@ fn load_read_evidence(
         annot_map.insert_at(record, &location);
 
         counter += 1;
-        if counter % 1__000 == 0 {
+        if counter % 1_000 == 0 {
             if let Some(spinner) = &spinner {
                 spinner.set_message(&format!("currently at {}", &location.contig(),));
             }

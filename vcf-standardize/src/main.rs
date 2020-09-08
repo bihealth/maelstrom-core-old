@@ -159,7 +159,7 @@ fn parse_bnd_pos(alt: &str) -> Result<(&[u8], i32), Error> {
     let re = Regex::new(r".*[\[\]](.+):(.+)[\[\]].*").unwrap();
     let cap = re
         .captures(alt)
-        .expect(&format!("Could not match breakend: {}", &alt));
+        .unwrap_or_else(|| panic!("Could not match breakend: {}", &alt));
 
     Ok((
         cap.get(1).unwrap().as_str().as_bytes(),
@@ -169,13 +169,13 @@ fn parse_bnd_pos(alt: &str) -> Result<(&[u8], i32), Error> {
 
 /// Parse Breakend BND position string to strands.
 fn parse_bnd_strands(alt: &str) -> String {
-    if alt.ends_with("[") {
+    if alt.ends_with('[') {
         "+-".to_string()
-    } else if alt.ends_with("]") {
+    } else if alt.ends_with(']') {
         "++".to_string()
-    } else if alt.starts_with("]") {
+    } else if alt.starts_with(']') {
         "-+".to_string()
-    } else if alt.starts_with("[") {
+    } else if alt.starts_with('[') {
         "--".to_string()
     } else {
         panic!("Unexpected alt string: {}", &alt);

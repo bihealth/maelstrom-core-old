@@ -5,6 +5,7 @@ use std::path::Path;
 use bio_types::genome::{AbstractInterval, Interval};
 use clap::{App, Arg, ArgMatches};
 use git_version::git_version;
+use indicatif::{ProgressBar, ProgressStyle};
 use log::{debug, info, LevelFilter};
 use rust_htslib::{bam, bam::Read, bcf};
 use separator::Separatable;
@@ -156,9 +157,32 @@ fn process_region(
     let tid: u32 = bam_reader.header().tid(contig.contig().as_bytes()).unwrap();
     bam_reader.fetch(tid, contig.range().start, contig.range().end)?;
 
+    let progress_bar = if options.verbosity == 0 {
+        let prog_bar =
+            ProgressBar::new(((contig.range().end - contig.range().start) / 1_000) as u64);
+        prog_bar.set_style(
+            ProgressStyle::default_bar()
+                .template(
+                    "scanning {msg:.green.bold} [{elapsed_precise}] [{wide_bar:.cyan/blue}] \
+            {pos:>7}/{len:7} Kbp {elapsed}/{eta}",
+                )
+                .progress_chars("=>-"),
+        );
+        prog_bar.set_message(&contig.contig());
+        Some(prog_bar)
+    } else {
+        None
+    };
+
     // Main loop for region: pass all BAM records in region through aggregator.
     info!("Computing coverage...");
-    aggregator.put_fetched_records(&mut bam_reader)?;
+    aggregator.put_fetched_records(&mut bam_reader, &|pos| {
+        if let Some(prog_bar) = &progress_bar {
+            if pos >= 0 {
+                prog_bar.set_position((pos / 1_000) as u64);
+            }
+        }
+    })?;
     debug!(
         "Processed {}, skipped {} records ({:.2}% were processed)",
         aggregator.num_processed().separated_string(),

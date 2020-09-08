@@ -49,7 +49,11 @@ impl BaseAggregator {
 /// Trait for alignment aggregation from BAM files.
 pub trait BamRecordAggregator {
     /// Put all `fetch()`ed records from `reader` into the aggregator.
-    fn put_fetched_records(&mut self, reader: &mut bam::IndexedReader) -> Result<(), Error>;
+    fn put_fetched_records(
+        &mut self,
+        reader: &mut bam::IndexedReader,
+        prog: &dyn std::ops::Fn(i64) -> (),
+    ) -> Result<(), Error>;
 
     /// Return statistics for the given window.
     fn get_stats(&self, window_id: usize) -> AggregationStats;
@@ -167,7 +171,12 @@ impl FragmentsAggregator {
 }
 
 impl BamRecordAggregator for FragmentsAggregator {
-    fn put_fetched_records(&mut self, reader: &mut bam::IndexedReader) -> Result<(), Error> {
+    fn put_fetched_records(
+        &mut self,
+        reader: &mut bam::IndexedReader,
+        prog: &dyn std::ops::Fn(i64) -> (),
+    ) -> Result<(), Error> {
+        let mut counter = 0;
         let mut record = bam::Record::new();
         loop {
             if !reader.read(&mut record)? {
@@ -175,6 +184,11 @@ impl BamRecordAggregator for FragmentsAggregator {
             } else {
                 self.put_bam_record(&record);
             }
+
+            if counter % 10_000 == 0 {
+                prog(record.pos());
+            }
+            counter += 1;
         }
 
         Ok(())
@@ -287,10 +301,15 @@ impl CoverageAggregator {
 
 impl BamRecordAggregator for CoverageAggregator {
     /// Put all `fetch()`ed records from `reader` into the aggregator.
-    fn put_fetched_records(&mut self, reader: &mut bam::IndexedReader) -> Result<(), Error> {
+    fn put_fetched_records(
+        &mut self,
+        reader: &mut bam::IndexedReader,
+        prog: &dyn std::ops::Fn(i64) -> (),
+    ) -> Result<(), Error> {
         let window_length = self.base.config.window_length as usize;
 
         // Iterate over all pileups
+        let mut counter: u64 = 0;
         let mut window_id = None;
         for pileup in reader.pileup() {
             let pileup = pileup.unwrap();
@@ -328,6 +347,11 @@ impl BamRecordAggregator for CoverageAggregator {
                 .collect::<Vec<u8>>();
             self.depths[pos % window_length] = mapqs.len();
             self.mapqs[pos % window_length] += mapqs.iter().map(|x| *x as usize).sum::<usize>();
+
+            if counter % 10_000 == 0 {
+                prog(pos as i64);
+            }
+            counter += 1;
         }
 
         if let Some(window_id) = window_id {

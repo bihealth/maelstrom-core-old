@@ -91,7 +91,7 @@ impl FragmentsAggregator {
 
         FragmentsAggregator {
             base,
-            counters: vec![0; contig_length],
+            counters: vec![0; num_bins],
             mapq_sums: vec![0; num_bins],
         }
     }
@@ -184,12 +184,16 @@ impl BamRecordAggregator for FragmentsAggregator {
         let window_length = self.base.config.window_length;
 
         AggregationStats {
-            cov: self.counters[window_id as usize] as f32,
+            cov: self.counters[window_id] as f32,
             cov_sd: None,
 
             start: window_id * window_length,
             end: min(self.base.contig_length(), (window_id + 1) * window_length),
-            mean_mapq: 60.0, // TODO: actually compute
+            mean_mapq: if self.counters[window_id] == 0 {
+                0.0
+            } else {
+                (self.mapq_sums[window_id] as f64 / self.counters[window_id] as f64) as f32
+            },
         }
     }
 
@@ -238,10 +242,8 @@ pub struct CoverageAggregator {
 
     /// Base-wise coverage information for the current window.
     pub depths: Vec<usize>,
-    /// ID of the current window.
-    pub window_id: Option<usize>,
     /// Sum of MAPQ values.
-    pub mapqs: Vec<u8>,
+    pub mapqs: Vec<usize>,
 }
 
 impl CoverageAggregator {
@@ -260,18 +262,22 @@ impl CoverageAggregator {
             base,
             coverage: vec![CoverageBin::new(); num_bins],
             depths: vec![0; window_length],
-            window_id: None,
             mapqs: vec![0; window_length],
         }
     }
 
     fn push_window(&mut self, window_id: usize) {
+        let depth_sum: usize = self.depths.iter().sum();
+        let mapq_sum: usize = self.mapqs.iter().sum();
         let depths: Vec<f64> = self.depths.iter().map(|x| *x as f64).collect();
-        let mapqs: Vec<f64> = self.mapqs.iter().map(|x| *x as f64).collect();
         self.coverage[window_id] = CoverageBin {
             cov_mean: (&depths).mean() as f32,
             cov_stddev: (&depths).std_dev() as f32,
-            mapq_mean: (&mapqs).mean() as f32,
+            mapq_mean: if depth_sum == 0 {
+                0.0
+            } else {
+                ((mapq_sum as f64) / (depth_sum as f64)) as f32
+            },
         };
         let window_length = self.base.config.window_length as usize;
         self.depths = vec![0; window_length];
@@ -285,26 +291,19 @@ impl BamRecordAggregator for CoverageAggregator {
         let window_length = self.base.config.window_length as usize;
 
         // Iterate over all pileups
-        let mut prev_window_id = None;
+        let mut window_id = None;
         for pileup in reader.pileup() {
             let pileup = pileup.unwrap();
             let pos = pileup.pos() as usize;
 
             // On window change, push window to result.
-            self.window_id = match (self.window_id, prev_window_id) {
-                (Some(window_id), Some(my_prev_window_id)) => {
-                    if window_id != my_prev_window_id {
-                        self.push_window(my_prev_window_id);
-                        prev_window_id = Some(window_id);
-                    }
-                    Some(pos / window_length)
+            let next_window_id = pos / window_length;
+            if let Some(window_id) = window_id {
+                if window_id != next_window_id {
+                    self.push_window(window_id);
                 }
-                (Some(window_id), None) => {
-                    prev_window_id = Some(window_id);
-                    Some(pos / window_length)
-                }
-                (None, _) => Some(pos / window_length as usize),
-            };
+            }
+            window_id = Some(next_window_id);
 
             // Compute depth of "valid" reads (note that only single/first-read coverage)
             // is computed.
@@ -328,18 +327,11 @@ impl BamRecordAggregator for CoverageAggregator {
                 .map(|alignment| alignment.record().mapq())
                 .collect::<Vec<u8>>();
             self.depths[pos % window_length] = mapqs.len();
-            self.mapqs.extend(&mapqs);
+            self.mapqs[pos % window_length] += mapqs.iter().map(|x| *x as usize).sum::<usize>();
         }
 
-        if let Some(window_id) = self.window_id {
-            match prev_window_id {
-                Some(prev_window_id) => {
-                    if prev_window_id != window_id {
-                        self.push_window(window_id);
-                    }
-                }
-                None => self.push_window(window_id),
-            }
+        if let Some(window_id) = window_id {
+            self.push_window(window_id);
         }
 
         Ok(())
@@ -350,10 +342,10 @@ impl BamRecordAggregator for CoverageAggregator {
         AggregationStats {
             cov: self.coverage[window_id as usize].cov_mean,
             cov_sd: Some(self.coverage[window_id as usize].cov_stddev),
+            mean_mapq: self.coverage[window_id as usize].mapq_mean,
 
             start: window_id * window_length,
             end: min(self.base.contig_length(), (window_id + 1) * window_length),
-            mean_mapq: 60.0, // TODO: actually compute
         }
     }
 

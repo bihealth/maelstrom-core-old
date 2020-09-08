@@ -13,6 +13,7 @@ use separator::Separatable;
 use lib_common::bam::{build_chroms_bam, samples_from_file};
 use lib_common::bcf::guess_bcf_format;
 use lib_common::error::Error;
+use lib_common::parse_region;
 use lib_config::Config;
 
 mod agg;
@@ -23,6 +24,8 @@ use agg::{BamRecordAggregator, CoverageAggregator, FragmentsAggregator};
 struct Options {
     /// Verbosity level
     verbosity: u64,
+    /// List of regions to call.
+    regions: Option<Vec<Interval>>,
     /// Path to configuration file to use,
     path_config: Option<String>,
     /// Path to input file.
@@ -37,6 +40,14 @@ impl Options {
     pub fn from_arg_matches<'a>(matches: &ArgMatches<'a>) -> Result<Self, Error> {
         Ok(Options {
             verbosity: matches.occurrences_of("v"),
+            regions: matches
+                .value_of("regions")
+                .map(|s| {
+                    let x: Result<Vec<Interval>, Error> =
+                        s.split(',').map(|t| parse_region(&t)).collect();
+                    x
+                })
+                .transpose()?,
             path_config: matches.value_of("config").map(|s| s.to_string()),
             path_input: match matches.value_of("input") {
                 Some(x) => String::from(x),
@@ -242,12 +253,18 @@ fn perform_collection(options: &Options, config: &Config) -> Result<(), Error> {
         build_chroms_bam(bam_reader.header(), None)?
     };
 
+    let regions = if let Some(regions) = &options.regions {
+        regions.clone()
+    } else {
+        contigs.clone()
+    };
+
     let samples = samples_from_file(&options.path_input)?;
     let mut writer = build_bcf_writer(&options.path_output, &samples, &contigs)?;
 
     // Process each contig.
-    for contig in &contigs {
-        process_region(&options, &config, &contig, &mut writer)?;
+    for region in &regions {
+        process_region(&options, &config, &region, &mut writer)?;
     }
 
     Ok(())
@@ -263,6 +280,7 @@ fn main() -> Result<(), Error> {
             Arg::from_usage("-v... 'Increase verbosity'"),
             Arg::from_usage("--overwrite 'Allow overwriting of output file'"),
             Arg::from_usage("-c, --config=[FILE] 'Sets a custom config file'"),
+            Arg::from_usage("-r, --regions=[REGIONS] 'comma-separated list of regions'"),
             Arg::from_usage("<input> 'input file to read from'"),
             Arg::from_usage("<output> 'output file to write to'"),
         ])
@@ -319,6 +337,7 @@ fn main() -> Result<(), Error> {
 
 #[cfg(test)]
 mod tests {
+    use super::Interval;
     use pretty_assertions::assert_eq;
     use std::fs;
     use tempdir::TempDir;
@@ -329,10 +348,12 @@ mod tests {
         path_input: &str,
         path_expected: &str,
         count_kind: &str,
+        regions: &Option<Vec<Interval>>,
     ) -> Result<(), super::Error> {
         let path_output = String::from(tmp_dir.path().join("out.vcf").to_str().unwrap());
         let options = super::Options {
             verbosity: 1, // disable progress bar
+            regions: regions.clone(),
             path_config: None,
             path_input: String::from(path_input),
             path_output: path_output.clone(),
@@ -363,6 +384,7 @@ mod tests {
             "./src/tests/data/ex.sorted.bam",
             "./src/tests/data/ex.expected.fragments.vcf",
             "fragments",
+            &None,
         )?;
         Ok(())
     }
@@ -375,6 +397,7 @@ mod tests {
             "./src/tests/data/ex.sorted.bam",
             "./src/tests/data/ex.expected.coverage.vcf",
             "coverage",
+            &None,
         )?;
         Ok(())
     }

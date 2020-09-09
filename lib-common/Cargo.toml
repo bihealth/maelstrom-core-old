@@ -6,6 +6,7 @@ edition = "2018"
 
 [dependencies]
 bio-types = "0.7"
+bio = "0.32"
 regex = "1"
 rust-htslib = { git = "https://github.com/holtgrewe/rust-htslib.git", branch = "bcf-fixes" }
 thiserror = "1"

@@ -149,6 +149,10 @@ fn default_annotate_read_evidence_max_dist() -> i64 {
     1_000
 }
 
+fn default_blocked_regions_bed() -> Option<String> {
+    None
+}
+
 /// Program configuration, from config file.
 #[derive(Deserialize, Debug, Clone)]
 pub struct Config {
@@ -217,4 +221,8 @@ pub struct Config {
     /// Number of bases to look for read evidence to annotate.
     #[serde(default = "default_annotate_read_evidence_max_dist")]
     pub annotate_read_evidence_max_dist: i64,
+
+    /// Optionally, a BED file with blocked regions.
+    #[serde(default = "default_blocked_regions_bed")]
+    pub blocked_regions_bed: Option<String>,
 }

@@ -21,6 +21,9 @@ pub enum Error {
     /// Invalid breakend.
     #[error("invalid BND ALT string")]
     InvalidBND(),
+    /// Problem reading BED file.
+    #[error("Invalid BED file")]
+    InvalidBEDFile(String),
     /// Problem with file I/O.
     #[error("problem with I/O")]
     Io {

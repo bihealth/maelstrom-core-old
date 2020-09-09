@@ -6,7 +6,14 @@ pub mod read_evidence;
 pub mod stats;
 pub mod sv;
 
+use core::hash::Hash;
+use std::fs::File;
+use std::io::{self, BufRead};
+
+use bio::data_structures::annot_map::AnnotMap;
+use bio_types::annot::contig::Contig;
 use bio_types::genome::Interval;
+use bio_types::strand::NoStrand;
 use regex::Regex;
 
 use error::Error;
@@ -31,4 +38,33 @@ pub fn parse_region(s: &str) -> Result<Interval, Error> {
     } else {
         Err(Error::InvalidRegion())
     }
+}
+
+/// Load BED file file and retur as Anotat
+pub fn bed_to_annot_map(path: &str) -> Result<AnnotMap<String, String>, Error> {
+    let mut result = AnnotMap::new();
+
+    for line in io::BufReader::new(File::open(path)?).lines() {
+        let line = line?;
+        let arr: Vec<&str> = line.split('\t').collect();
+        if arr.len() < 3 {
+            return Err(error::Error::InvalidBEDFile(format!(
+                "Unexpected number of fields in {} (must have >= 3)",
+                &line
+            )));
+        }
+
+        let start = arr[1].parse::<isize>()?;
+        let end = arr[2].parse::<isize>()?;
+
+        let loc = Contig::new(
+            arr[1].to_owned(),
+            start,
+            (end - start) as usize,
+            NoStrand::Unknown,
+        );
+        result.insert_at("".to_owned(), &loc);
+    }
+
+    Ok(result)
 }

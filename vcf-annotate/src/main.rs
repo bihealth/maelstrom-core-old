@@ -18,6 +18,7 @@ use log::{debug, info, LevelFilter};
 use rust_htslib::{bcf, bcf::Read};
 
 use lib_common::bcf::collect_contigs;
+use lib_common::bed_to_annot_map;
 use lib_common::error::Error;
 use lib_common::parse_region;
 use lib_common::read_evidence;
@@ -115,7 +116,10 @@ fn load_read_evidence(
     interval: &Interval,
     path_pesr_evidence: &str,
     options: &Options,
-) -> Result<(), Error> {
+    blocked: &Option<AnnotMap<String, String>>,
+) -> Result<usize, Error> {
+    let mut skipped = 0;
+
     info!("loading evidence for {:?}...", interval);
     let mut reader = read_evidence::IndexedReader::from_path(&path_pesr_evidence)?;
     if !reader.fetch(
@@ -123,7 +127,7 @@ fn load_read_evidence(
         interval.range().start,
         interval.range().end,
     )? {
-        return Ok(());
+        return Ok(skipped);
     }
 
     let spinner_style = ProgressStyle::default_spinner()
@@ -163,7 +167,17 @@ fn load_read_evidence(
                 NoStrand::Unknown,
             ),
         };
-        annot_map.insert_at(record, &location);
+        let skip = if let Some(blocked) = blocked {
+            blocked.find(&location).next().is_some()
+        } else {
+            false
+        };
+        if !skip {
+            annot_map.insert_at(record, &location);
+        } else {
+            skipped += 1;
+            debug!("skipping!");
+        }
 
         counter += 1;
         if counter % 1_000 == 0 {
@@ -177,7 +191,7 @@ fn load_read_evidence(
     }
     info!("... done loading evidence for {:?}", &interval);
 
-    Ok(())
+    Ok(skipped)
 }
 
 #[derive(Debug, PartialEq, PartialOrd, Eq, Ord)]
@@ -189,29 +203,61 @@ struct EvidenceCount {
 
 /// Return PR/SR read names.
 fn fetch_evidence(
-    contig: &SeqContigStranded,
+    query: &SeqContigStranded,
     read_evidence: &AnnotMap<String, read_evidence::Record>,
+    blocked: &Option<AnnotMap<String, String>>,
 ) -> (HashSet<String>, HashSet<(String, bool)>) {
     debug!("  fetch_evidence");
     let mut prs = HashSet::new();
     let mut srs = HashSet::new();
 
-    debug!("    finding {:?}", &contig);
-    debug!("    #found = {}", read_evidence.find(contig).count());
+    debug!("    finding {:?}", &query);
+    debug!("    #found = {}", read_evidence.find(query).count());
 
-    for record in read_evidence.find(contig) {
+    for record in read_evidence.find(query) {
         match record.data() {
             read_evidence::Record::PairedRead {
-                read_name, strand1, ..
+                read_name,
+                strand1,
+                contig1,
+                start1,
+                contig2,
+                start2,
+                ..
             } => {
                 debug!(
                     "    [[PR]] read_name = {:?}, strand1 = {:?}",
                     &read_name, strand1
                 );
-                match (contig.strand(), strand1) {
+                match (query.strand(), strand1) {
                     (ReqStrand::Forward, Strand::Forward)
                     | (ReqStrand::Reverse, Strand::Reverse) => {
-                        prs.insert(read_name.clone());
+                        let skip = if let Some(blocked) = blocked {
+                            let location1 = Contig::new(
+                                contig1.clone(),
+                                *start1 as isize,
+                                1,
+                                NoStrand::Unknown,
+                            );
+                            let skip1 = blocked.find(&location1).next().is_some();
+                            let skip2 = if let Some(start2) = start2 {
+                                let location2 = Contig::new(
+                                    contig2.clone().unwrap(),
+                                    *start2 as isize,
+                                    1,
+                                    NoStrand::Unknown,
+                                );
+                                blocked.find(&location2).next().is_some()
+                            } else {
+                                false
+                            };
+                            skip1 || skip2
+                        } else {
+                            false
+                        };
+                        if !skip {
+                            prs.insert(read_name.clone());
+                        }
                     }
                     _ => (), // ignored; no strand match
                 }
@@ -220,18 +266,29 @@ fn fetch_evidence(
                 read_name,
                 clipped_sides,
                 is_first,
+                contig,
+                start,
                 ..
             } => {
                 debug!(
                     "    [[SR]] read_name = {:?}, clipped_sides = {:?}",
-                    &read_name, clipped_sides,
+                    &read_name, clipped_sides
                 );
-                match (contig.strand(), clipped_sides) {
+                match (query.strand(), clipped_sides) {
                     (ReqStrand::Forward, Sides::Both)
                     | (ReqStrand::Reverse, Sides::Both)
                     | (ReqStrand::Forward, Sides::Right)
                     | (ReqStrand::Reverse, Sides::Left) => {
-                        srs.insert((read_name.clone(), *is_first));
+                        let skip = if let Some(blocked) = blocked {
+                            let location =
+                                Contig::new(contig.clone(), *start as isize, 1, NoStrand::Unknown);
+                            blocked.find(&location).next().is_some()
+                        } else {
+                            false
+                        };
+                        if !skip {
+                            srs.insert((read_name.clone(), *is_first));
+                        }
                     }
                     _ => (), // ignored; no side match
                 }
@@ -247,9 +304,10 @@ fn count_evidence(
     left: &SeqContigStranded,
     right: &SeqContigStranded,
     read_evidence: &AnnotMap<String, read_evidence::Record>,
+    blocked: &Option<AnnotMap<String, String>>,
 ) -> (usize, usize) {
-    let (left_prs, left_srs) = fetch_evidence(left, read_evidence);
-    let (right_prs, right_srs) = fetch_evidence(right, read_evidence);
+    let (left_prs, left_srs) = fetch_evidence(left, read_evidence, blocked);
+    let (right_prs, right_srs) = fetch_evidence(right, read_evidence, blocked);
     debug!("count_evidence");
     debug!("  left_prs = {:?}", &left_prs);
     debug!("  left_srs = {:?}", &left_srs);
@@ -280,6 +338,7 @@ fn annotate_pesr(
     config: &Config,
     read_evidence: &AnnotMap<String, read_evidence::Record>,
     region: &Interval,
+    blocked: &Option<AnnotMap<String, String>>,
 ) -> Result<Vec<EvidenceCount>, Error> {
     fn f(a: isize, b: isize) -> isize {
         if b > a {
@@ -359,7 +418,7 @@ fn annotate_pesr(
 
         for (left, right) in &search_wheres {
             debug!(">>>>> searching: {}/{}", &left, &right);
-            let (pe, sr) = count_evidence(left, right, read_evidence);
+            let (pe, sr) = count_evidence(left, right, read_evidence, blocked);
             debug!(">>>>> pe = {}, sr = {}", pe, sr);
             pe_count += pe;
             sr_count += sr;
@@ -442,6 +501,12 @@ fn perform_annotation(options: &Options, config: &Config) -> Result<(), Error> {
 
     let reader = bcf::IndexedReader::from_path(&options.path_input)?;
 
+    let blocked = if let Some(blocked_regions_bed) = &config.blocked_regions_bed {
+        Some(bed_to_annot_map(blocked_regions_bed)?)
+    } else {
+        None
+    };
+
     let regions = if let Some(regions) = &options.regions {
         regions.clone()
     } else {
@@ -451,18 +516,26 @@ fn perform_annotation(options: &Options, config: &Config) -> Result<(), Error> {
             .collect()
     };
 
+    let mut skipped = 0;
     let read_evidence = if let Some(path_pesr_evidence) = &options.path_pesr_evidence {
         info!("Loading read-based evidence...");
         let mut read_evidence: AnnotMap<String, read_evidence::Record> = AnnotMap::new();
         for region in &regions {
             debug!("region = {:?}", &region);
-            load_read_evidence(&mut read_evidence, region, path_pesr_evidence, &options)?;
+            skipped += load_read_evidence(
+                &mut read_evidence,
+                region,
+                path_pesr_evidence,
+                &options,
+                &blocked,
+            )?;
         }
         debug!("evidence: {:?}", &read_evidence);
         Some(read_evidence)
     } else {
         None
     };
+    info!("Skipped {} blocked evidence records", skipped);
 
     info!("Processing regions/contigs...");
     for region in &regions {
@@ -474,7 +547,14 @@ fn perform_annotation(options: &Options, config: &Config) -> Result<(), Error> {
                 pe_count,
                 sr_count,
             } in sorted(
-                annotate_pesr(&options, &config, &read_evidence.as_ref().unwrap(), &region)?.iter(),
+                annotate_pesr(
+                    &options,
+                    &config,
+                    &read_evidence.as_ref().unwrap(),
+                    &region,
+                    &blocked,
+                )?
+                .iter(),
             ) {
                 pe_writer.write(&sv_id, *pe_count as f64)?;
                 sr_writer.write(&sv_id, *sr_count as f64)?;
@@ -593,6 +673,7 @@ mod tests {
         path_input: &str,
         path_expected_prefix: &str,
         regions: &Option<Vec<Interval>>,
+        config_text: &str,
     ) -> Result<(), super::Error> {
         let prefix_output = String::from(tmp_dir.path().join("out").to_str().unwrap());
         let options = super::Options {
@@ -607,7 +688,7 @@ mod tests {
             prefix_output: prefix_output.clone(),
             overwrite: false,
         };
-        let config: super::Config = toml::from_str("").unwrap();
+        let config: super::Config = toml::from_str(config_text).unwrap();
 
         super::perform_annotation(&options, &config)?;
 
@@ -653,6 +734,24 @@ mod tests {
             "./src/tests/data/ex-delly-svs.vcf.gz",
             "./src/tests/data/ex-delly.expected",
             &None,
+            "",
+        )?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_vcf_cluster_delly2_filter_with_blocked() -> Result<(), super::Error> {
+        let tmp_dir = TempDir::new("tests")?;
+        _perform_annotation_and_test(
+            &tmp_dir,
+            "sample-1",
+            Some(String::from("./src/tests/data/ex-delly-pesr.tsv.gz")),
+            None, // Some(String::from("./src/tests/data/ex-delly-doc.vcf.gz")),
+            None, // Some(String::from("./src/tests/data/ex-delly-snv.vcf.gz")),
+            "./src/tests/data/ex-delly-svs.vcf.gz",
+            "./src/tests/data/ex-delly.expected-blocked",
+            &None,
+            "blocked_regions_bed = \"./src/tests/data/ex-delly-blocked.bed\"",
         )?;
         Ok(())
     }

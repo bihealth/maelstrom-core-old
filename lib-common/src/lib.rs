@@ -5,6 +5,7 @@ pub mod error;
 pub mod read_evidence;
 pub mod stats;
 pub mod sv;
+use log::info;
 
 use core::hash::Hash;
 use std::collections::HashMap;
@@ -49,8 +50,10 @@ pub fn bed_to_annot_map<R>(
 where
     R: Hash + Eq + Clone + std::borrow::ToOwned<Owned = R>,
 {
+    info!("Loading BED file {}", &path);
     let mut result = AnnotMap::new();
 
+    let mut count = 0;
     for line in io::BufReader::new(File::open(path)?).lines() {
         let line = line?;
         let arr: Vec<&str> = line.split('\t').collect();
@@ -75,7 +78,9 @@ where
             NoStrand::Unknown,
         );
         result.insert_at((), &loc);
+        count += 1;
     }
+    info!("=> {} entries", count);
 
     Ok(result)
 }

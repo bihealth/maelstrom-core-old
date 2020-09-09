@@ -1,9 +1,13 @@
 /// bam-scan -- Scan BAM file for discordant and clipped reads
+use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 use std::str;
 
+use bio::data_structures::annot_map::AnnotMap;
+use bio_types::annot::contig::Contig;
 use bio_types::genome::{AbstractInterval, Interval};
+use bio_types::strand::NoStrand;
 use bloom::{BloomFilter, ASMS};
 use clap::{App, Arg, ArgMatches};
 use git_version::git_version;
@@ -13,6 +17,7 @@ use rust_htslib::{bam, bam::Read};
 
 use lib_common::bam::guess_bam_format;
 use lib_common::bam::library::{estimate_library_insert_size, is_interesting, LibraryProperties};
+use lib_common::bed_to_annot_map;
 use lib_common::error::Error;
 use lib_common::parse_region;
 use lib_config::Config;
@@ -74,13 +79,39 @@ fn extract_reads_from_current_window(
     config: &Config,
     lib_properties: &LibraryProperties,
     pass: i32,
-) -> Result<(), Error> {
+    blocked: &Option<AnnotMap<i32, ()>>,
+) -> Result<usize, Error> {
+    let mut skipped = 0;
     let mut pos = 0;
     for record in state.buffer.iter() {
         pos = record.pos();
         if pos > window_end {
             break;
         }
+
+        if let Some(blocked) = blocked {
+            // Check record alignment.
+            let location = Contig::new(
+                record.tid(),
+                record.pos() as isize,
+                record.cigar_len(),
+                NoStrand::Unknown,
+            );
+            if blocked.find(&location).next().is_some() {
+                skipped += 1;
+                continue;
+            }
+            // Check mate alignment.
+            if record.is_paired() && record.mtid() != -1 {
+                let location =
+                    Contig::new(record.mtid(), record.mpos() as isize, 1, NoStrand::Unknown);
+                if blocked.find(&location).next().is_some() {
+                    skipped += 1;
+                    continue;
+                }
+            }
+        };
+
         if state.bloom.contains(&record.qname())
             || is_interesting(&record, &lib_properties, &config)
         {
@@ -100,7 +131,7 @@ fn extract_reads_from_current_window(
         }
     }
 
-    Ok(())
+    Ok(skipped)
 }
 
 /// Extract reads from the path to the BAM file in the options (path_input) to the output BAM file.
@@ -169,6 +200,19 @@ fn extract_reads(
         ),
     };
 
+    let contigs: HashMap<String, i32> = header_view
+        .target_names()
+        .iter()
+        .enumerate()
+        .map(|(i, &s)| (str::from_utf8(s).unwrap().to_string(), i as i32))
+        .collect();
+
+    let blocked = if let Some(blocked_regions_bed) = &config.blocked_regions_bed {
+        Some(bed_to_annot_map(blocked_regions_bed, &contigs)?)
+    } else {
+        None
+    };
+
     let regions = if let Some(regions) = &options.regions {
         regions.clone()
     } else {
@@ -207,6 +251,7 @@ fn extract_reads(
                 None
             };
 
+        let mut skipped = 0;
         while window_no < window_count {
             let window_start = region.range().start as i64
                 + if window_no == 0 {
@@ -231,13 +276,14 @@ fn extract_reads(
                 window_end as u64,
             )?;
             for pass in 1..=2 {
-                extract_reads_from_current_window(
+                skipped += extract_reads_from_current_window(
                     &progress_bar,
                     &mut state,
                     window_end,
                     &config,
                     &lib_properties,
                     pass,
+                    &blocked,
                 )?;
             }
             window_no += 1;
@@ -246,6 +292,7 @@ fn extract_reads(
         if let Some(prog_bar) = progress_bar {
             prog_bar.finish();
         }
+        info!("Skipped {} BAM records on contig", skipped);
     }
 
     info!("Done scanning BAM file...");
@@ -333,6 +380,7 @@ mod tests {
         path_input: &str,
         path_expected: &str,
         regions: &Option<Vec<Interval>>,
+        config_text: &str,
     ) -> Result<(), super::Error> {
         let path_output = String::from(tmp_dir.path().join("out.sam").to_str().unwrap());
         let options = super::Options {
@@ -343,7 +391,7 @@ mod tests {
             path_output: path_output.clone(),
             overwrite: false,
         };
-        let config: super::Config = toml::from_str("").unwrap();
+        let config: super::Config = toml::from_str(config_text).unwrap();
         let library_properties = super::LibraryProperties {
             max_rlen: 100,
             median_isize: 300.0,
@@ -369,6 +417,7 @@ mod tests {
             "./src/tests/data/ex-pe-hard-leading.sorted.bam",
             "./src/tests/data/ex-pe-hard-leading.expected.sam",
             &None,
+            "",
         )?;
         Ok(())
     }
@@ -381,6 +430,7 @@ mod tests {
             "./src/tests/data/ex-pe-hard-trailing.sorted.bam",
             "./src/tests/data/ex-pe-hard-trailing.expected.sam",
             &None,
+            "",
         )?;
         Ok(())
     }
@@ -393,6 +443,7 @@ mod tests {
             "./src/tests/data/ex-pe-soft-neg.sorted.bam",
             "./src/tests/data/ex-pe-soft-neg.expected.sam",
             &None,
+            "",
         )?;
         Ok(())
     }
@@ -404,6 +455,7 @@ mod tests {
             "./src/tests/data/ex-pe-soft-pos.sorted.bam",
             "./src/tests/data/ex-pe-soft-pos.expected.sam",
             &None,
+            "",
         )?;
         Ok(())
     }
@@ -416,6 +468,19 @@ mod tests {
             "./src/tests/data/ex-pe-tid.sorted.bam",
             "./src/tests/data/ex-pe-tid.expected.sam",
             &None,
+            "",
+        )?;
+        Ok(())
+    }
+    #[test]
+    fn identify_pairs_by_different_tid_with_blocked() -> Result<(), super::Error> {
+        let tmp_dir = TempDir::new("tests")?;
+        _extract_reads_and_test(
+            &tmp_dir,
+            "./src/tests/data/ex-pe-tid.sorted.bam",
+            "./src/tests/data/ex-pe-tid.expected-blocked.sam",
+            &None,
+            "blocked_regions_bed = \"./src/tests/data/ex-blocked.bed\"",
         )?;
         Ok(())
     }
@@ -428,6 +493,7 @@ mod tests {
             "./src/tests/data/ex-pe-tlen.sorted.bam",
             "./src/tests/data/ex-pe-tlen.expected.sam",
             &None,
+            "",
         )?;
         Ok(())
     }
@@ -440,6 +506,7 @@ mod tests {
             "./src/tests/data/ex-pe-orient.sorted.bam",
             "./src/tests/data/ex-pe-orient.expected.sam",
             &None,
+            "",
         )?;
         Ok(())
     }

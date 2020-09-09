@@ -1,5 +1,5 @@
 /// vcf-annotate -- Create annotations for VCF file with SVs.
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::Path;
 
@@ -116,7 +116,7 @@ fn load_read_evidence(
     interval: &Interval,
     path_pesr_evidence: &str,
     options: &Options,
-    blocked: &Option<AnnotMap<String, String>>,
+    blocked: &Option<AnnotMap<String, ()>>,
 ) -> Result<usize, Error> {
     let mut skipped = 0;
 
@@ -205,7 +205,7 @@ struct EvidenceCount {
 fn fetch_evidence(
     query: &SeqContigStranded,
     read_evidence: &AnnotMap<String, read_evidence::Record>,
-    blocked: &Option<AnnotMap<String, String>>,
+    blocked: &Option<AnnotMap<String, ()>>,
 ) -> (HashSet<String>, HashSet<(String, bool)>) {
     debug!("  fetch_evidence");
     let mut prs = HashSet::new();
@@ -304,7 +304,7 @@ fn count_evidence(
     left: &SeqContigStranded,
     right: &SeqContigStranded,
     read_evidence: &AnnotMap<String, read_evidence::Record>,
-    blocked: &Option<AnnotMap<String, String>>,
+    blocked: &Option<AnnotMap<String, ()>>,
 ) -> (usize, usize) {
     let (left_prs, left_srs) = fetch_evidence(left, read_evidence, blocked);
     let (right_prs, right_srs) = fetch_evidence(right, read_evidence, blocked);
@@ -338,7 +338,7 @@ fn annotate_pesr(
     config: &Config,
     read_evidence: &AnnotMap<String, read_evidence::Record>,
     region: &Interval,
-    blocked: &Option<AnnotMap<String, String>>,
+    blocked: &Option<AnnotMap<String, ()>>,
 ) -> Result<Vec<EvidenceCount>, Error> {
     fn f(a: isize, b: isize) -> isize {
         if b > a {
@@ -501,8 +501,12 @@ fn perform_annotation(options: &Options, config: &Config) -> Result<(), Error> {
 
     let reader = bcf::IndexedReader::from_path(&options.path_input)?;
 
+    let contigs = collect_contigs(&reader)?;
+
     let blocked = if let Some(blocked_regions_bed) = &config.blocked_regions_bed {
-        Some(bed_to_annot_map(blocked_regions_bed)?)
+        let contigs: HashMap<String, String> =
+            contigs.iter().map(|s| (s.clone(), s.clone())).collect();
+        Some(bed_to_annot_map(blocked_regions_bed, &contigs)?)
     } else {
         None
     };
@@ -510,7 +514,7 @@ fn perform_annotation(options: &Options, config: &Config) -> Result<(), Error> {
     let regions = if let Some(regions) = &options.regions {
         regions.clone()
     } else {
-        collect_contigs(&reader)?
+        contigs
             .iter()
             .map(|name| Interval::new(name.clone(), 0..10_000_000_000))
             .collect()

@@ -7,6 +7,7 @@ pub mod stats;
 pub mod sv;
 
 use core::hash::Hash;
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::{self, BufRead};
 
@@ -40,8 +41,14 @@ pub fn parse_region(s: &str) -> Result<Interval, Error> {
     }
 }
 
-/// Load BED file file and retur as Anotat
-pub fn bed_to_annot_map(path: &str) -> Result<AnnotMap<String, String>, Error> {
+/// Load BED file file and retur as AnnotMap
+pub fn bed_to_annot_map<R>(
+    path: &str,
+    contig_map: &HashMap<String, R>,
+) -> Result<AnnotMap<R, ()>, Error>
+where
+    R: Hash + Eq + Clone + std::borrow::ToOwned<Owned = R>,
+{
     let mut result = AnnotMap::new();
 
     for line in io::BufReader::new(File::open(path)?).lines() {
@@ -57,13 +64,17 @@ pub fn bed_to_annot_map(path: &str) -> Result<AnnotMap<String, String>, Error> {
         let start = arr[1].parse::<isize>()?;
         let end = arr[2].parse::<isize>()?;
 
+        let rid = contig_map
+            .get(arr[0])
+            .ok_or(Error::InvalidBEDFile(format!("Unknown contig: {}", arr[0])))?;
+
         let loc = Contig::new(
-            arr[1].to_owned(),
+            rid.to_owned(),
             start,
             (end - start) as usize,
             NoStrand::Unknown,
         );
-        result.insert_at("".to_owned(), &loc);
+        result.insert_at((), &loc);
     }
 
     Ok(result)

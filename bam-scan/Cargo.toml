@@ -5,6 +5,7 @@ authors = ["Manuel Holtgrewe <manuel.holtgrewe@bihealth.de>"]
 edition = "2018"
 
 [dependencies]
+bio = "0.32"
 bloom = "0.3"
 bio-types = "0.7"
 indicatif = "0.15"

@@ -27,6 +27,8 @@ pub enum Algorithm {
     Delly,
     /// Manta
     Manta,
+    // cnMOPS
+    CNMOPS,
 }
 
 /// Parse string into region.

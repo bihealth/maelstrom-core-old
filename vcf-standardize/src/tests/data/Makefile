@@ -1,4 +1,8 @@
 FILES := \
+	ex-cnmops-filter.vcf.gz \
+	ex-cnmops-filter.vcf.gz.tbi \
+	ex-cnmops-nofilter.vcf.gz \
+	ex-cnmops-nofilter.vcf.gz.tbi \
 	ex-delly-filter.vcf.gz \
 	ex-delly-filter.vcf.gz.tbi \
 	ex-delly-nofilter.vcf.gz \
@@ -19,4 +23,4 @@ clean:
 	bgzip -c $< >$@
 
 %.vcf.gz.tbi: %.vcf.gz
-	tabix -f $<
+	tabix -p vcf -f $<

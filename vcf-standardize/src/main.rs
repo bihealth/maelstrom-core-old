@@ -6,7 +6,7 @@ use bio_types::genome::{AbstractInterval, Interval};
 use clap::{App, Arg, ArgMatches};
 use git_version::git_version;
 use indicatif::{ProgressBar, ProgressStyle};
-use log::{debug, info, LevelFilter};
+use log::{debug, info, warn, LevelFilter};
 use regex::Regex;
 use rust_htslib::{bcf, bcf::Read};
 
@@ -38,10 +38,8 @@ impl Options {
     pub fn from_arg_matches<'a>(matches: &ArgMatches<'a>) -> Result<Self, Error> {
         Ok(Options {
             verbosity: matches.occurrences_of("v"),
-            tool: match matches
-                .value_of("algorithm")
-                .ok_or(Error::OptionMissing())?
-            {
+            tool: match matches.value_of("tool").ok_or(Error::OptionMissing())? {
+                "cnmops" => Algorithm::CNMOPS,
                 "delly" => Algorithm::Delly,
                 "manta" => Algorithm::Manta,
                 _ => return Err(Error::OptionMissing()),
@@ -66,6 +64,65 @@ impl Options {
             overwrite: matches.occurrences_of("overwrite") > 0,
         })
     }
+}
+
+/// cnMOPS-specific part of summarizing a single BCF record.
+fn summarize_record_cnmops(
+    src: &mut bcf::Record,
+    _src_header: &bcf::header::HeaderView,
+    dst: &mut bcf::Record,
+    dst_header: &bcf::header::HeaderView,
+) -> Result<bool, Error> {
+    dst.set_alleles(&src.alleles())?;
+
+    // INFO/END2
+    let end2 = src.info(b"END").integer().expect("No END?").unwrap()[0];
+    dst.push_info_integer(b"END2", &[end2])?;
+    // INFO/CHR2
+    dst.push_info_string(
+        b"CHR2",
+        &[&dst_header.rid2name(dst.rid().expect("No REF?"))?],
+    )?;
+    // INFO/SVTYPE
+    let sv_type = String::from(std::str::from_utf8(
+        src.info(b"SVTYPE").string()?.unwrap()[0],
+    )?);
+    dst.push_info_string(b"SVTYPE", &[sv_type.as_bytes()])?;
+
+    // NB: no INFO/STRANDS
+    // INFO/SVLEN
+    dst.push_info_integer(b"SVLEN", &[end2 - (src.pos() as i32)])?;
+    // INFO/ALGORITHMS
+    dst.push_info_string(b"ALGORITHMS", &[b"cnmops"])?;
+
+    // FORMAT/GT
+    let sample_count = dst_header.sample_count() as usize;
+    let mut gts: Vec<i32> = Vec::new();
+    src.format(b"GT").integer()?[..sample_count]
+        .iter()
+        .for_each(|xs| gts.extend_from_slice(xs));
+    dst.push_format_integer(b"GT", &gts)?;
+
+    // FORMAT/cnmops
+    // For each sample, collect wehther there is any called allele.
+    let called: Vec<i32> = (0..sample_count)
+        .map(|i| {
+            let ith_genotype: bcf::record::Genotype = src.genotypes().unwrap().get(i as usize);
+            let any_var: bool = ith_genotype.iter().any(|gt_allele| match gt_allele {
+                bcf::record::GenotypeAllele::Unphased(i)
+                | bcf::record::GenotypeAllele::Phased(i) => (*i != 0),
+                _ => false,
+            });
+            if any_var {
+                1
+            } else {
+                0
+            }
+        })
+        .collect();
+    dst.push_format_integer(b"cnmops", &called)?;
+
+    Ok(true)
 }
 
 /// Delly-specific part of summarizing a single BCF record.
@@ -306,6 +363,7 @@ fn summarize_record(
     dst.set_pos(src.pos());
 
     match tool {
+        Algorithm::CNMOPS => summarize_record_cnmops(src, src_header, dst, dst_header),
         Algorithm::Delly => summarize_record_delly(src, src_header, dst, dst_header),
         Algorithm::Manta => summarize_record_manta(src, src_header, dst, dst_header),
     }
@@ -349,7 +407,12 @@ fn perform_extraction(options: &Options, config: &Config) -> Result<(), Error> {
     let mut buffer_read = reader.empty_record();
     for region in &regions {
         let rid = reader.header().name2rid(region.contig().as_bytes())?;
-        reader.fetch(rid, region.range().start, region.range().end)?;
+        if !reader
+            .fetch(rid, region.range().start, region.range().end)
+            .is_ok()
+        {
+            warn!("No data for {:?}", &region);
+        }
 
         while reader.read(&mut buffer_read)? {
             let mut buffer_write = writer.empty_record();
@@ -394,7 +457,7 @@ fn main() -> Result<(), Error> {
         .about("Extract and standardize records from tool VCF files")
         .args(&[
             Arg::from_usage("-v... 'Increase verbosity'"),
-            Arg::from_usage("-t, --tool=<delly|manta> 'Name of SV calling tool'"),
+            Arg::from_usage("-t, --tool=<cnmops|delly|manta> 'Name of SV calling tool'"),
             Arg::from_usage("--overwrite 'Allow overwriting of output file'"),
             Arg::from_usage("-c, --config=[FILE] 'Sets a custom config file'"),
             Arg::from_usage("-r, --regions=[REGIONS] 'comma-separated list of regions'"),
@@ -542,6 +605,33 @@ mod tests {
             "stdvcf_apply_filters = false",
             &None,
             &Algorithm::Manta,
+        )?;
+        Ok(())
+    }
+    #[test]
+    fn test_stdvcf_cnmops_filter() -> Result<(), super::Error> {
+        let tmp_dir = TempDir::new("tests")?;
+        _perform_extraction_and_test(
+            &tmp_dir,
+            "./src/tests/data/ex-cnmops-filter.vcf.gz",
+            "./src/tests/data/ex-cnmops-filter.expected.vcf",
+            "stdvcf_apply_filters = true",
+            &None,
+            &Algorithm::CNMOPS,
+        )?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_stdvcf_cnmops_nofilter() -> Result<(), super::Error> {
+        let tmp_dir = TempDir::new("tests")?;
+        _perform_extraction_and_test(
+            &tmp_dir,
+            "./src/tests/data/ex-cnmops-nofilter.vcf.gz",
+            "./src/tests/data/ex-cnmops-nofilter.expected.vcf",
+            "stdvcf_apply_filters = false",
+            &None,
+            &Algorithm::CNMOPS,
         )?;
         Ok(())
     }

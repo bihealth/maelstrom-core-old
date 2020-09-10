@@ -1,0 +1,19 @@
+##fileformat=VCFv4.2
+##FILTER=<ID=PASS,Description="All filters passed">
+##FILTER=<ID=QUAL,Description="Quality filter">
+##contig=<ID=1,length=249250621>
+##contig=<ID=2,length=243199373>
+##contig=<ID=3,length=198022430>
+##INFO=<ID=END,Number=1,Type=Integer,Description="End coordinate of this variant">
+##INFO=<ID=SVLEN,Number=1,Type=Integer,Description="Difference in length between REF and ALT alleles">
+##INFO=<ID=SVTYPE,Number=1,Type=String,Description="Type of structural variant">
+##INFO=<ID=SVMETHOD,Number=1,Type=String,Description="Type of approach used to detect SV">
+##ALT=<ID=CNV,Description="Copy number variation">
+##FORMAT=<ID=GT,Number=1,Type=String,Description="All filters passed">
+##FORMAT=<ID=CN,Number=1,Type=Integer,Description="Inferred integer copy number">
+##FORMAT=<ID=cnmops,Number=1,Type=Integer,Description="Whether or not CNV was called by cn.mops">
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	R16_59-N1-DNA1-WGS1
+1	10001	.	N	<CNV>	.	PASS	END=30000;SVLEN=20000;SVTYPE=DEL;SVMETHOD=cn.mops	GT:CN:cnmops	1:1
+1	20001	.	N	<CNV>	.	QUAL	END=30000;SVLEN=10000;SVTYPE=DUP;SVMETHOD=cn.mops	GT:CN:cnmops	1:1
+2	10001	.	N	<CNV>	.	PASS	END=20000;SVLEN=10000;SVTYPE=DEL;SVMETHOD=cn.mops	GT:CN:cnmops	1:1
+3	10001	.	N	<CNV>	.	PASS	END=20000;SVLEN=10000;SVTYPE=DEL;SVMETHOD=cn.mops	GT:CN:cnmops	1:1

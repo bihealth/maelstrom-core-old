@@ -162,6 +162,10 @@ fn default_blocked_regions_bed() -> Option<String> {
     None
 }
 
+fn default_doc_annotation_min_bins() -> usize {
+    10
+}
+
 /// Program configuration, from config file.
 #[derive(Deserialize, Debug, Clone)]
 pub struct Config {
@@ -234,4 +238,8 @@ pub struct Config {
     /// Optionally, a BED file with blocked regions.
     #[serde(default = "default_blocked_regions_bed")]
     pub blocked_regions_bed: Option<String>,
+
+    /// Minimal number of bins for DoC annotation.
+    #[serde(default = "default_doc_annotation_min_bins")]
+    pub doc_annotation_min_bins: usize,
 }

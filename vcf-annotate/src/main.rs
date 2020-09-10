@@ -24,6 +24,7 @@ use lib_common::parse_region;
 use lib_common::read_evidence;
 use lib_common::read_evidence::Sides;
 use lib_common::read_evidence::Strand;
+use lib_common::stats::Stats;
 use lib_common::sv;
 use lib_config::Config;
 
@@ -195,19 +196,19 @@ fn load_read_evidence(
 }
 
 #[derive(Debug, PartialEq, PartialOrd, Eq, Ord)]
-struct EvidenceCount {
+struct ReadEvidenceCount {
     sv_id: String,
     pe_count: usize,
     sr_count: usize,
 }
 
 /// Return PR/SR read names.
-fn fetch_evidence(
+fn fetch_read_evidence(
     query: &SeqContigStranded,
     read_evidence: &AnnotMap<String, read_evidence::Record>,
     blocked: &Option<AnnotMap<String, ()>>,
 ) -> (HashSet<String>, HashSet<(String, bool)>) {
-    debug!("  fetch_evidence");
+    debug!("  fetch_read_evidence");
     let mut prs = HashSet::new();
     let mut srs = HashSet::new();
 
@@ -306,8 +307,8 @@ fn count_evidence(
     read_evidence: &AnnotMap<String, read_evidence::Record>,
     blocked: &Option<AnnotMap<String, ()>>,
 ) -> (usize, usize) {
-    let (left_prs, left_srs) = fetch_evidence(left, read_evidence, blocked);
-    let (right_prs, right_srs) = fetch_evidence(right, read_evidence, blocked);
+    let (left_prs, left_srs) = fetch_read_evidence(left, read_evidence, blocked);
+    let (right_prs, right_srs) = fetch_read_evidence(right, read_evidence, blocked);
     debug!("count_evidence");
     debug!("  left_prs = {:?}", &left_prs);
     debug!("  left_srs = {:?}", &left_srs);
@@ -339,7 +340,7 @@ fn annotate_pesr(
     read_evidence: &AnnotMap<String, read_evidence::Record>,
     region: &Interval,
     blocked: &Option<AnnotMap<String, ()>>,
-) -> Result<Vec<EvidenceCount>, Error> {
+) -> Result<Vec<ReadEvidenceCount>, Error> {
     fn f(a: isize, b: isize) -> isize {
         if b > a {
             0
@@ -424,7 +425,7 @@ fn annotate_pesr(
             sr_count += sr;
         }
 
-        result.push(EvidenceCount {
+        result.push(ReadEvidenceCount {
             sv_id,
             pe_count,
             sr_count,
@@ -434,14 +435,88 @@ fn annotate_pesr(
     Ok(result)
 }
 
+/// Coverage evidence information for a structural variant.
+#[derive(Debug, PartialEq, PartialOrd)]
+struct CoverageEvidence {
+    /// ID of the called SV
+    sv_id: String,
+    /// Normalized coverage
+    norm_cov: f64,
+}
+
+struct DocWindow {
+    cov: f64,
+    mapq: f64,
+}
+
 /// Perform DoC annotation of SV.
 fn annotate_doc(
-    _options: &Options,
-    _config: &Config,
-    _region: &Interval,
-) -> Result<Vec<(String, f64)>, Error> {
-    panic!("DoC analysis not implemented yet!");
-    // Ok(vec![])
+    options: &Options,
+    config: &Config,
+    region: &Interval,
+    median_doc: f64,
+) -> Result<Vec<CoverageEvidence>, Error> {
+    let mut reader = bcf::IndexedReader::from_path(&options.path_input)?;
+    let res = reader.fetch(
+        reader.header().name2rid(region.contig().as_bytes())?,
+        region.range().start,
+        region.range().end,
+    );
+    match res {
+        Err(rust_htslib::bcf::errors::Error::Seek { .. }) => return Ok(vec![]),
+        Err(_) => res?,
+        Ok(_) => (),
+    }
+
+    let mut doc_reader = bcf::IndexedReader::from_path(options.path_doc_evidence.clone().unwrap())?;
+    let mut doc_record = doc_reader.empty_record();
+
+    let mut record = reader.empty_record();
+    let mut result = Vec::new();
+    while reader.read(&mut record)? {
+        let sv_id = std::str::from_utf8(&record.id())?.to_string();
+        debug!(">>> sv_id = {}", &sv_id);
+        let record = sv::StandardizedRecord::from_bcf_record(&mut record)?;
+
+        let norm_cov =
+            if record.sv_type == "DEL" || record.sv_type == "DUP" || record.sv_type == "CNV" {
+                let rid: u32 = doc_reader.header().name2rid(record.chrom.as_bytes())?;
+                if doc_reader
+                    .fetch(rid, record.pos as u64, record.end2 as u64)
+                    .is_ok()
+                {
+                    let mut doc_windows = Vec::new();
+                    while doc_reader.read(&mut doc_record)? {
+                        doc_windows.push(DocWindow {
+                            cov: doc_record.format(b"RCV").float()?[0][0].into(),
+                            mapq: doc_record.format(b"MQ").float()?[0][0].into(),
+                        });
+                    }
+
+                    let q0_windows = doc_windows.iter().filter(|w| w.mapq >= 1.0).count();
+                    let do_filter = q0_windows >= config.doc_annotation_min_bins;
+                    let covs: Vec<f64> = doc_windows
+                        .iter()
+                        .filter(|w| !do_filter || w.mapq < 1.0)
+                        .map(|w| w.cov)
+                        .collect();
+
+                    if covs.is_empty() {
+                        0.0_f64
+                    } else {
+                        covs.median() / median_doc
+                    }
+                } else {
+                    std::f64::NAN
+                }
+            } else {
+                std::f64::NAN
+            };
+
+        result.push(CoverageEvidence { sv_id, norm_cov });
+    }
+
+    Ok(result)
 }
 
 /// Perform BAF annotation of SV.
@@ -452,6 +527,17 @@ fn annotate_baf(
 ) -> Result<Vec<(String, f64)>, Error> {
     panic!("BAF analysis not implemented yet!");
     // Ok(vec![])
+}
+
+/// Load DoC from file and compute median.
+fn load_doc_median(path: &str) -> Result<f64, Error> {
+    let mut reader = bcf::Reader::from_path(path)?;
+    let mut covs: Vec<f64> = Vec::new();
+    let mut record = reader.empty_record();
+    while reader.read(&mut record)? {
+        covs.push(record.format(b"RCV").float()?[0][0].into());
+    }
+    Ok((&covs).median())
 }
 
 /// Main entry point after parsing command line and loading options.
@@ -478,6 +564,14 @@ fn perform_annotation(options: &Options, config: &Config) -> Result<(), Error> {
             )
         })
         .transpose()?;
+    let median_doc = if let Some(path_doc_evidence) = &options.path_doc_evidence {
+        info!("Computing median depth of coverage (DoC)...");
+        let median_doc = load_doc_median(path_doc_evidence)?;
+        info!("... median DoC is {}", median_doc);
+        Some(median_doc)
+    } else {
+        None
+    };
     let mut doc_writer = options
         .path_doc_evidence
         .clone()
@@ -546,7 +640,7 @@ fn perform_annotation(options: &Options, config: &Config) -> Result<(), Error> {
         info!("Processing contig {:?}", region);
 
         if let (Some(pe_writer), Some(sr_writer)) = (&mut pe_writer, &mut sr_writer) {
-            for EvidenceCount {
+            for ReadEvidenceCount {
                 sv_id,
                 pe_count,
                 sr_count,
@@ -565,8 +659,10 @@ fn perform_annotation(options: &Options, config: &Config) -> Result<(), Error> {
             }
         }
         if let Some(doc_writer) = &mut doc_writer {
-            for (sv_id, score) in annotate_doc(&options, &config, &region)?.iter() {
-                doc_writer.write(&sv_id, *score)?;
+            for CoverageEvidence { sv_id, norm_cov } in
+                annotate_doc(&options, &config, &region, median_doc.unwrap())?.iter()
+            {
+                doc_writer.write(&sv_id, *norm_cov)?;
             }
         }
         if let Some(baf_writer) = &mut baf_writer {
@@ -592,8 +688,8 @@ fn main() -> Result<(), Error> {
             Arg::from_usage("-c, --config=[FILE] 'Sets a custom config file'"),
             Arg::from_usage("-r, --regions=[REGIONS] 'comma-separated list of regions'"),
             Arg::from_usage("--path-pesr-evidence=[FILE] 'Path to PE/SR evidence file'"),
-            Arg::from_usage("--path-doc-evidence=[FILE] 'Path to PE/SR evidence file'"),
-            Arg::from_usage("--path-snv-vcf=[FILE] 'Path to PE/SR evidence file'"),
+            Arg::from_usage("--path-doc-evidence=[FILE] 'Path to DoC evidence file'"),
+            Arg::from_usage("--path-snv-vcf=[FILE] 'Path to BAF evidence file'"),
             Arg::from_usage("-s, --sample=<SAMPLE> 'Set sample to analyze'"),
             Arg::from_usage("<input> 'input VCF file to read from'"),
             Arg::from_usage("<output> 'output prefix; suffixes: .{pe,sr,baf,doc}.tsv"),
@@ -733,7 +829,7 @@ mod tests {
             &tmp_dir,
             "sample-1",
             Some(String::from("./src/tests/data/ex-delly-pesr.tsv.gz")),
-            None, // Some(String::from("./src/tests/data/ex-delly-doc.vcf.gz")),
+            Some(String::from("./src/tests/data/ex-delly-doc.vcf.gz")),
             None, // Some(String::from("./src/tests/data/ex-delly-snv.vcf.gz")),
             "./src/tests/data/ex-delly-svs.vcf.gz",
             "./src/tests/data/ex-delly.expected",
@@ -750,7 +846,7 @@ mod tests {
             &tmp_dir,
             "sample-1",
             Some(String::from("./src/tests/data/ex-delly-pesr.tsv.gz")),
-            None, // Some(String::from("./src/tests/data/ex-delly-doc.vcf.gz")),
+            Some(String::from("./src/tests/data/ex-delly-doc.vcf.gz")),
             None, // Some(String::from("./src/tests/data/ex-delly-snv.vcf.gz")),
             "./src/tests/data/ex-delly-svs.vcf.gz",
             "./src/tests/data/ex-delly.expected-blocked",

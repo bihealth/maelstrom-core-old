@@ -1,8 +1,8 @@
 ##fileformat=VCFv4.2
 ##FILTER=<ID=PASS,Description="All filters passed">
 ##contig=<ID=1,length=249250621>
-##contig=<ID=2,length=243199373>
-##contig=<ID=3,length=198022430>
+##contig=<ID=2,length=249250621>
+##contig=<ID=3,length=249250621>
 ##ALT=<ID=DEL,length=Deletion>
 ##ALT=<ID=DUP,length=Duplication>
 ##ALT=<ID=INV,length=Inversion>
@@ -14,12 +14,10 @@
 ##INFO=<ID=STRANDS,Number=1,Type=String,Description=Breakpoint strandedness>
 ##INFO=<ID=SVLEN,Number=1,Type=Integer,Description=SV length>
 ##INFO=<ID=ALGORITHMS,Number=.,Type=String,Description=Source algorithms>
+##INFO=<ID=COMMENT,Number=.,Type=String,Description=Comment of test data>
 ##FORMAT=<ID=GT,Number=1,Type=String,Description=Genotype>
 ##FORMAT=<ID=cnmops,Number=1,Type=Integer,Description=Called by cnMOPS>
-##FORMAT=<ID=delly,Number=1,Type=Integer,Description=Called by Delly>
-##FORMAT=<ID=manta,Number=1,Type=Integer,Description=Called by Manta>
-#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	R16_59-N1-DNA1-WGS1
-1	10001	.	N	<CNV>	0	.	END2=30000;CHR2=1;SVTYPE=DEL;SVLEN=20000;ALGORITHMS=cnmops	GT:cnmops	1:1
-1	20001	.	N	<CNV>	0	.	END2=30000;CHR2=1;SVTYPE=DUP;SVLEN=10000;ALGORITHMS=cnmops	GT:cnmops	1:1
-2	10001	.	N	<CNV>	0	.	END2=20000;CHR2=2;SVTYPE=DEL;SVLEN=10000;ALGORITHMS=cnmops	GT:cnmops	1:1
-3	10001	.	N	<CNV>	0	.	END2=20000;CHR2=3;SVTYPE=DEL;SVLEN=10000;ALGORITHMS=cnmops	GT:cnmops	1:1
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	sample-1
+1	10003	.	A	<DEL>	0	.	END2=20000;CHR2=1;SVTYPE=DEL;SVLEN=10003;ALGORITHMS=cnmops;COMMENT=Should+be+joined	GT:cnmops	1:1
+1	20003	.	A	<DEL>	0	.	END2=29000;CHR2=1;SVTYPE=DEL;SVLEN=10003;ALGORITHMS=cnmops;COMMENT=No+join+overlap	GT:cnmops	1:1
+1	30000	.	A	<DUP>	0	.	END2=40000;CHR2=1;SVTYPE=DEL;SVLEN=10000;ALGORITHMS=cnmops;COMMENT=Join+across+types	GT:cnmops	1:1

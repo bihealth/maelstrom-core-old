@@ -94,6 +94,12 @@ impl StandardizedRecord {
             }
         }
 
+        let strands = if record.info(b"STRANDS").string()?.is_some() {
+            String::from_utf8(record.info(b"STRANDS").string()?.unwrap()[0].to_vec())?
+        } else {
+            ".".to_string()
+        };
+
         Ok(Self {
             chrom: String::from_utf8(record.header().rid2name(record.rid().unwrap())?.to_vec())?,
             pos: record.pos(),
@@ -106,7 +112,7 @@ impl StandardizedRecord {
             chrom2: String::from_utf8(record.info(b"CHR2").string()?.unwrap()[0].to_vec())?,
             end2: record.info(b"END2").integer()?.unwrap()[0] as i64,
             sv_type: String::from_utf8(record.info(b"SVTYPE").string()?.unwrap()[0].to_vec())?,
-            strands: String::from_utf8(record.info(b"STRANDS").string()?.unwrap()[0].to_vec())?,
+            strands,
             sv_len: record.info(b"SVLEN").integer()?.unwrap()[0] as i64,
             algorithms: record
                 .info(b"ALGORITHMS")

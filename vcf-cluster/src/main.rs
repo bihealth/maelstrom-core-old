@@ -124,7 +124,7 @@ fn is_overlap_okay(
     config: &ClusterSettings,
 ) -> bool {
     debug!("Comparing \n  {:?}\nand\n  {:?}\n--", lhs, rhs);
-    if lhs.sv_type != rhs.sv_type {
+    if config.match_sv_type && lhs.sv_type != rhs.sv_type {
         panic!("Comparing SVs of different type!");
     }
     let ovl = overlap(&lhs.interval(), &rhs.interval());
@@ -178,6 +178,134 @@ fn is_overlap_okay(
     true
 }
 
+/// Cluster the SVs for the given SV type.
+fn cluster_records_sv_type(
+    records: &[StandardizedRecord],
+    cluster_settings: &ClusterSettings,
+    sv_type: &str,
+    result: &mut Vec<StandardizedRecord>,
+) -> Result<(), Error> {
+    // Build interval tree for efficient overlap detection.
+    let mut ids = Vec::new();
+    let mut tree = IntervalTree::new();
+    for (i, record) in records.iter().enumerate() {
+        if !cluster_settings.match_sv_type || record.sv_type == sv_type {
+            debug!("inserting...");
+            tree.insert(
+                record.extended_interval(cluster_settings.max_bp_distance.unwrap_or(0)),
+                ids.len(),
+            );
+            ids.push(i);
+        }
+    }
+
+    // Use union-find data structure for joining overlapping records into one cluster.
+    let mut uf = UnionFind::new(ids.len());
+    for record_idx in 0..ids.len() {
+        let record = &records[ids[record_idx]];
+        debug!("find {:?}", record.interval());
+        for ovl_it in tree.find(record.interval()) {
+            let other_idx = *ovl_it.data();
+            let other = &records[ids[other_idx]];
+
+            if is_overlap_okay(&record, &other, &cluster_settings) {
+                debug!("union: {} {}", record_idx, other_idx);
+                uf.union(record_idx, other_idx);
+            }
+        }
+    }
+
+    // Gather clusters of record ids.
+    let mut cluster: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
+    for (record_idx, record_id) in ids.iter().enumerate() {
+        let set_id = uf.find(record_idx);
+        cluster
+            .entry(set_id)
+            .or_insert_with(Vec::new)
+            .push(*record_id);
+    }
+
+    // Collapse each cluster.
+    for record_ids in cluster.values() {
+        debug!("collapsing: {:?}", &record_ids);
+        let mut record = StandardizedRecord::new();
+        record.chrom = records[record_ids[0]].chrom.clone();
+        record.reference = String::from("N");
+        record.alt = if let Some(sv_type) = &cluster_settings.sv_type_out {
+            format!("<{}>", &sv_type)
+        } else {
+            records[record_ids[0]].alt.clone()
+        };
+        record.chrom2 = records[record_ids[0]].chrom2.clone();
+        record.sv_type = if let Some(sv_type) = &cluster_settings.sv_type_out {
+            sv_type.clone()
+        } else {
+            records[record_ids[0]].sv_type.clone()
+        };
+        record.strands = records[record_ids[0]].strands.clone();
+
+        for record_id in record_ids {
+            let mut algorithms = records[*record_id].algorithms.clone();
+            record.algorithms.append(&mut algorithms);
+        }
+        record.algorithms.sort();
+        record.algorithms.dedup();
+
+        let mut sample_idx: HashMap<String, usize> = HashMap::new();
+        for record_id in record_ids {
+            let l_record = &records[*record_id];
+            for (l_idx, sample) in l_record.samples.iter().enumerate() {
+                if let Some(&idx) = sample_idx.get(sample) {
+                    record.gts[idx] = match std::cmp::max(
+                        record.gts[idx].matches('1').count(),
+                        l_record.gts[l_idx].matches('1').count(),
+                    ) {
+                        0 => "0/0".to_string(),
+                        1 => "0/1".to_string(),
+                        _ => "1/1".to_string(),
+                    };
+                    let mut called_by = l_record.called_by[l_idx].clone();
+                    record.called_by[idx].append(&mut called_by);
+                    record.called_by[idx].sort();
+                    record.called_by[idx].dedup();
+                } else {
+                    sample_idx.insert(sample.clone(), record.samples.len());
+                    record.samples.push(sample.clone());
+                    record.gts.push(l_record.gts[l_idx].clone());
+                    record.called_by.push(l_record.called_by[l_idx].clone());
+                }
+            }
+        }
+
+        let mut pos: Vec<_> = record_ids.iter().map(|id| records[*id].pos).collect();
+        pos.sort();
+        debug!("pos = {:?}", &pos);
+        record.pos = if pos.len() % 2 == 1 {
+            pos[pos.len() / 2]
+        } else {
+            (pos[pos.len() / 2] + pos[pos.len() / 2 - 1]) / 2
+        };
+        if sv_type == "BND" {
+            record.end2 = record.pos + 1;
+            record.sv_len = -1;
+        } else {
+            let mut end2: Vec<_> = record_ids.iter().map(|id| records[*id].end2).collect();
+            end2.sort();
+            debug!("end2 = {:?}", &end2);
+            record.end2 = if end2.len() % 2 == 1 {
+                end2[end2.len() / 2]
+            } else {
+                (end2[end2.len() / 2] + end2[end2.len() / 2 - 1]) / 2
+            };
+            record.sv_len = record.end2 - record.pos;
+        }
+
+        result.push(record);
+    }
+
+    Ok(())
+}
+
 /// Cluster the SVs (all are assumed to be on the same contig).
 fn cluster_records(
     options: &Options,
@@ -192,115 +320,12 @@ fn cluster_records(
         _ => return Err(Error::UnknownClusterSettingName()),
     };
 
-    for sv_type in &["DEL", "DUP", "INV", "BND"] {
-        // Build interval tree for efficient overlap detection.
-        let mut ids = Vec::new();
-        let mut tree = IntervalTree::new();
-        for (i, record) in records.iter().enumerate() {
-            if record.sv_type == *sv_type {
-                tree.insert(
-                    record.extended_interval(cluster_settings.max_bp_distance.unwrap_or(0)),
-                    ids.len(),
-                );
-                ids.push(i);
-            }
+    if cluster_settings.match_sv_type {
+        for sv_type in &["DEL", "DUP", "INV", "BND"] {
+            cluster_records_sv_type(records, &cluster_settings, &sv_type, &mut result)?;
         }
-
-        // Use union-find data structure for joining overlapping records into one cluster.
-        let mut uf = UnionFind::new(ids.len());
-        for record_idx in 0..ids.len() {
-            let record = &records[ids[record_idx]];
-            debug!("find {:?}", record.interval());
-            for ovl_it in tree.find(record.interval()) {
-                let other_idx = *ovl_it.data();
-                let other = &records[ids[other_idx]];
-
-                if is_overlap_okay(&record, &other, &cluster_settings) {
-                    debug!("union: {} {}", record_idx, other_idx);
-                    uf.union(record_idx, other_idx);
-                }
-            }
-        }
-
-        // Gather clusters of record ids.
-        let mut cluster: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
-        for (record_idx, record_id) in ids.iter().enumerate() {
-            let set_id = uf.find(record_idx);
-            cluster
-                .entry(set_id)
-                .or_insert_with(Vec::new)
-                .push(*record_id);
-        }
-
-        // Collapse each cluster.
-        for record_ids in cluster.values() {
-            debug!("collapsing: {:?}", &record_ids);
-            let mut record = StandardizedRecord::new();
-            record.chrom = records[record_ids[0]].chrom.clone();
-            record.reference = String::from("N");
-            record.alt = records[record_ids[0]].alt.clone();
-            record.chrom2 = records[record_ids[0]].chrom2.clone();
-            record.sv_type = records[record_ids[0]].sv_type.clone();
-            record.strands = records[record_ids[0]].strands.clone();
-
-            for record_id in record_ids {
-                let mut algorithms = records[*record_id].algorithms.clone();
-                record.algorithms.append(&mut algorithms);
-            }
-            record.algorithms.sort();
-            record.algorithms.dedup();
-
-            let mut sample_idx: HashMap<String, usize> = HashMap::new();
-            for record_id in record_ids {
-                let l_record = &records[*record_id];
-                for (l_idx, sample) in l_record.samples.iter().enumerate() {
-                    if let Some(&idx) = sample_idx.get(sample) {
-                        record.gts[idx] = match std::cmp::max(
-                            record.gts[idx].matches('1').count(),
-                            l_record.gts[l_idx].matches('1').count(),
-                        ) {
-                            0 => "0/0".to_string(),
-                            1 => "0/1".to_string(),
-                            _ => "1/1".to_string(),
-                        };
-                        let mut called_by = l_record.called_by[l_idx].clone();
-                        record.called_by[idx].append(&mut called_by);
-                        record.called_by[idx].sort();
-                        record.called_by[idx].dedup();
-                    } else {
-                        sample_idx.insert(sample.clone(), record.samples.len());
-                        record.samples.push(sample.clone());
-                        record.gts.push(l_record.gts[l_idx].clone());
-                        record.called_by.push(l_record.called_by[l_idx].clone());
-                    }
-                }
-            }
-
-            let mut pos: Vec<_> = record_ids.iter().map(|id| records[*id].pos).collect();
-            pos.sort();
-            debug!("pos = {:?}", &pos);
-            record.pos = if pos.len() % 2 == 1 {
-                pos[pos.len() / 2]
-            } else {
-                (pos[pos.len() / 2] + pos[pos.len() / 2 - 1]) / 2
-            };
-            if *sv_type == "BND" {
-                record.end2 = record.pos + 1;
-                record.sv_len = -1;
-            } else {
-                let mut end2: Vec<_> = record_ids.iter().map(|id| records[*id].end2).collect();
-                end2.sort();
-                debug!("end2 = {:?}", &end2);
-                record.end2 = if end2.len() % 2 == 1 {
-                    end2[end2.len() / 2]
-                } else {
-                    (end2[end2.len() / 2] + end2[end2.len() / 2 - 1]) / 2
-                };
-                record.sv_len = record.end2 - record.pos;
-            }
-
-            result.push(record);
-        }
+    } else {
+        cluster_records_sv_type(records, &cluster_settings, &"<IGNORED>", &mut result)?;
     }
 
     result.sort();
@@ -487,6 +512,7 @@ mod tests {
     /// Helper that runs `perform_clustering()` and compares the result.
     fn _perform_clustering_and_test(
         tmp_dir: &TempDir,
+        setting: &str,
         paths_input: &Vec<String>,
         path_expected: &str,
         config_str: &str,
@@ -494,7 +520,7 @@ mod tests {
     ) -> Result<(), super::Error> {
         let path_output = String::from(tmp_dir.path().join("out.vcf").to_str().unwrap());
         let options = super::Options {
-            setting: "per_tool_pesr".to_string(),
+            setting: setting.to_string(),
             verbosity: 1, // disable progress bar
             regions: regions.clone(),
             path_config: None,
@@ -519,12 +545,30 @@ mod tests {
         let tmp_dir = TempDir::new("tests")?;
         _perform_clustering_and_test(
             &tmp_dir,
+            "per_tool_pesr",
             &vec![
                 "./src/tests/data/ex-delly-1.vcf.gz".to_string(),
                 "./src/tests/data/ex-delly-2.vcf.gz".to_string(),
             ],
             "./src/tests/data/ex-delly.expected.vcf",
             "stdvcf_apply_filters = true",
+            &None,
+        )?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_vcf_cluster_cnmops() -> Result<(), super::Error> {
+        let tmp_dir = TempDir::new("tests")?;
+        _perform_clustering_and_test(
+            &tmp_dir,
+            "per_tool_doc",
+            &vec![
+                "./src/tests/data/ex-cnmops-1.vcf.gz".to_string(),
+                "./src/tests/data/ex-cnmops-2.vcf.gz".to_string(),
+            ],
+            "./src/tests/data/ex-cnmops.expected.vcf",
+            "",
             &None,
         )?;
         Ok(())

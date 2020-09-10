@@ -44,6 +44,10 @@ fn default_match_sv_type() -> bool {
     true
 }
 
+fn default_sv_type_out() -> Option<String> {
+    None
+}
+
 fn default_sample_overlap() -> Option<f32> {
     Some(0.5)
 }
@@ -63,6 +67,9 @@ pub struct ClusterSettings {
     /// Require sv_type to match.
     #[serde(default = "default_match_sv_type")]
     pub match_sv_type: bool,
+    /// The SV type to write out when ignoring it.
+    #[serde(default = "default_sv_type_out")]
+    pub sv_type_out: Option<String>,
     /// Sample overlap to require, if any.
     #[serde(default = "default_sample_overlap")]
     pub sample_overlap: Option<f32>,
@@ -122,6 +129,7 @@ fn default_vcf_cluster_presets_per_tool_pesr() -> ClusterSettings {
         max_bp_distance: Some(300),
         match_strands: true,
         match_sv_type: true,
+        sv_type_out: None,
         sample_overlap: None,
     }
 }
@@ -130,8 +138,9 @@ fn default_vcf_cluster_presets_per_tool_doc() -> ClusterSettings {
     ClusterSettings {
         reciprocal_overlap: 0.8,
         max_bp_distance: None,
-        match_strands: true,
-        match_sv_type: true,
+        match_strands: false,
+        match_sv_type: false,
+        sv_type_out: Some("CNV".to_string()),
         sample_overlap: None,
     }
 }

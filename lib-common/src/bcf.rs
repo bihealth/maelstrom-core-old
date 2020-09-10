@@ -57,6 +57,7 @@ pub fn build_vcf_header(template: &bcf::header::HeaderView) -> Result<bcf::Heade
         ("DEL", "Deletion"),
         ("DUP", "Duplication"),
         ("INV", "Inversion"),
+        ("CNV", "Copy number variant"),
     ];
     for (id, desc) in alts {
         header.push_record(format!("##ALT=<ID={},length={}>", &id, &desc).as_bytes());

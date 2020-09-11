@@ -13,11 +13,10 @@ use bio_types::strand::ReqStrand;
 use clap::{App, Arg, ArgMatches};
 use git_version::git_version;
 use indicatif::{ProgressBar, ProgressStyle};
-use itertools::sorted;
 use log::{debug, info, LevelFilter};
 use rust_htslib::{bcf, bcf::Read};
 
-use lib_common::bcf::collect_contigs;
+use lib_common::bcf::{collect_contigs, guess_bcf_format};
 use lib_common::bed_to_annot_map;
 use lib_common::error::Error;
 use lib_common::parse_region;
@@ -48,7 +47,7 @@ struct Options {
     /// Path to input VCF file.
     path_input: String,
     /// Path to output file.
-    prefix_output: String,
+    path_output: String,
     /// Overwrite output file(s).
     overwrite: bool,
 }
@@ -79,35 +78,12 @@ impl Options {
                 Some(x) => String::from(x),
                 None => return Err(Error::OptionMissing()),
             },
-            prefix_output: match matches.value_of("output") {
+            path_output: match matches.value_of("output") {
                 Some(x) => String::from(x),
                 None => return Err(Error::OptionMissing()),
             },
             overwrite: matches.occurrences_of("overwrite") > 0,
         })
-    }
-}
-
-/// Code to implement matrix I/O.
-mod mtx_io {
-    use std::io::Write;
-
-    pub struct Writer {
-        handle: std::fs::File,
-    }
-
-    impl Writer {
-        pub fn from(path: &str, sample: &str) -> Result<Self, std::io::Error> {
-            let mut handle = std::fs::File::create(path)?;
-            handle.write_all(format!("#sv_id\t{}\n", &sample).as_bytes())?;
-            Ok(Self { handle })
-        }
-
-        pub fn write(&mut self, sv_id: &str, value: f64) -> Result<(), std::io::Error> {
-            self.handle
-                .write_all(format!("{}\t{}\n", &sv_id, value).as_bytes())?;
-            Ok(())
-        }
     }
 }
 
@@ -519,12 +495,21 @@ fn annotate_doc(
     Ok(result)
 }
 
+/// B alelel frequency evidence
+#[derive(Debug, PartialEq, PartialOrd)]
+struct BAFEvidence {
+    /// ID of the called SV
+    sv_id: String,
+    /// BAF value
+    baf: f64,
+}
+
 /// Perform BAF annotation of SV.
 fn annotate_baf(
     _options: &Options,
     _config: &Config,
     _region: &Interval,
-) -> Result<Vec<(String, f64)>, Error> {
+) -> Result<Vec<BAFEvidence>, Error> {
     panic!("BAF analysis not implemented yet!");
     // Ok(vec![])
 }
@@ -540,30 +525,58 @@ fn load_doc_median(path: &str) -> Result<f64, Error> {
     Ok((&covs).median())
 }
 
+/// Write annotated variants.
+fn write_annotated(
+    options: &Options,
+    _config: &Config,
+    region: &Interval,
+    read_evidence: &Option<Vec<ReadEvidenceCount>>,
+    doc_evidence: &Option<Vec<CoverageEvidence>>,
+    baf_evidence: &Option<Vec<BAFEvidence>>,
+    writer: &mut bcf::Writer,
+) -> Result<(), Error> {
+    let mut reader = bcf::IndexedReader::from_path(&options.path_input)?;
+    let res = reader.fetch(
+        reader.header().name2rid(region.contig().as_bytes())?,
+        region.range().start,
+        region.range().end,
+    );
+    match res {
+        Err(rust_htslib::bcf::errors::Error::Seek { .. }) => return Ok(()),
+        Err(_) => res?,
+        Ok(_) => (),
+    }
+
+    let mut idx = 0;
+    let mut record = reader.empty_record();
+    while reader.read(&mut record)? {
+        if let Some(evidence) = read_evidence {
+            let elem = evidence.get(idx).unwrap();
+            record.push_format_float(b"PR", &[elem.pe_count as f32])?;
+            record.push_format_float(b"SR", &[elem.sr_count as f32])?;
+        }
+        if let Some(evidence) = doc_evidence {
+            let elem = evidence.get(idx).unwrap();
+            record.push_format_float(b"RD", &[elem.norm_cov as f32])?;
+        }
+        if let Some(evidence) = baf_evidence {
+            let elem = evidence.get(idx).unwrap();
+            record.push_format_float(b"BF", &[elem.baf as f32])?;
+        }
+
+        writer.translate(&mut record);
+        writer.write(&record)?;
+
+        idx += 1;
+    }
+
+    Ok(())
+}
+
 /// Main entry point after parsing command line and loading options.
 fn perform_annotation(options: &Options, config: &Config) -> Result<(), Error> {
     info!("Starting to annotate variants for sample...");
 
-    let mut pe_writer = options
-        .path_pesr_evidence
-        .clone()
-        .map(|_p| {
-            mtx_io::Writer::from(
-                &format!("{}.pe.tsv", &options.prefix_output),
-                &options.sample,
-            )
-        })
-        .transpose()?;
-    let mut sr_writer = options
-        .path_pesr_evidence
-        .clone()
-        .map(|_p| {
-            mtx_io::Writer::from(
-                &format!("{}.sr.tsv", &options.prefix_output),
-                &options.sample,
-            )
-        })
-        .transpose()?;
     let median_doc = if let Some(path_doc_evidence) = &options.path_doc_evidence {
         info!("Computing median depth of coverage (DoC)...");
         let median_doc = load_doc_median(path_doc_evidence)?;
@@ -572,28 +585,16 @@ fn perform_annotation(options: &Options, config: &Config) -> Result<(), Error> {
     } else {
         None
     };
-    let mut doc_writer = options
-        .path_doc_evidence
-        .clone()
-        .map(|_p| {
-            mtx_io::Writer::from(
-                &format!("{}.doc.tsv", &options.prefix_output),
-                &options.sample,
-            )
-        })
-        .transpose()?;
-    let mut baf_writer = options
-        .path_snv_vcf
-        .clone()
-        .map(|_p| {
-            mtx_io::Writer::from(
-                &format!("{}.baf.tsv", &options.prefix_output),
-                &options.sample,
-            )
-        })
-        .transpose()?;
 
     let reader = bcf::IndexedReader::from_path(&options.path_input)?;
+    let header = bcf::Header::from_template(reader.header());
+    let guessed = guess_bcf_format(&options.path_output);
+    let mut writer = bcf::Writer::from_path(
+        &options.path_output,
+        &header,
+        guessed.uncompressed,
+        guessed.format,
+    )?;
 
     let contigs = collect_contigs(&reader)?;
 
@@ -639,37 +640,30 @@ fn perform_annotation(options: &Options, config: &Config) -> Result<(), Error> {
     for region in &regions {
         info!("Processing contig {:?}", region);
 
-        if let (Some(pe_writer), Some(sr_writer)) = (&mut pe_writer, &mut sr_writer) {
-            for ReadEvidenceCount {
-                sv_id,
-                pe_count,
-                sr_count,
-            } in sorted(
-                annotate_pesr(
-                    &options,
-                    &config,
-                    &read_evidence.as_ref().unwrap(),
-                    &region,
-                    &blocked,
-                )?
-                .iter(),
-            ) {
-                pe_writer.write(&sv_id, *pe_count as f64)?;
-                sr_writer.write(&sv_id, *sr_count as f64)?;
-            }
-        }
-        if let Some(doc_writer) = &mut doc_writer {
-            for CoverageEvidence { sv_id, norm_cov } in
-                annotate_doc(&options, &config, &region, median_doc.unwrap())?.iter()
-            {
-                doc_writer.write(&sv_id, *norm_cov)?;
-            }
-        }
-        if let Some(baf_writer) = &mut baf_writer {
-            for (sv_id, score) in annotate_baf(&options, &config, &region)?.iter() {
-                baf_writer.write(&sv_id, *score)?;
-            }
-        }
+        let read_evidence = read_evidence
+            .as_ref()
+            .map(|re| annotate_pesr(&options, &config, &re, &region, &blocked))
+            .transpose()?;
+        let doc_evidence = options
+            .path_doc_evidence
+            .as_ref()
+            .map(|_| annotate_doc(&options, &config, &region, median_doc.unwrap()))
+            .transpose()?;
+        let baf_evidence = options
+            .path_snv_vcf
+            .as_ref()
+            .map(|_| annotate_baf(&options, &config, &region))
+            .transpose()?;
+
+        write_annotated(
+            &options,
+            &config,
+            &region,
+            &read_evidence,
+            &doc_evidence,
+            &baf_evidence,
+            &mut writer,
+        )?;
     }
 
     info!("Done annotating variants...");
@@ -692,26 +686,14 @@ fn main() -> Result<(), Error> {
             Arg::from_usage("--path-snv-vcf=[FILE] 'Path to BAF evidence file'"),
             Arg::from_usage("-s, --sample=<SAMPLE> 'Set sample to analyze'"),
             Arg::from_usage("<input> 'input VCF file to read from'"),
-            Arg::from_usage("<output> 'output prefix; suffixes: .{pe,sr,baf,doc}.tsv"),
+            Arg::from_usage("<output> 'output VCF file"),
         ])
         .get_matches();
     let options = Options::from_arg_matches(&matches)?;
 
     // Output files must not exist yet.
     if options.path_pesr_evidence.is_some()
-        && Path::new(&format!("{}.pesr.tsv", options.prefix_output)).exists()
-        && !options.overwrite
-    {
-        return Err(Error::OutputFileExists());
-    }
-    if options.path_doc_evidence.is_some()
-        && Path::new(&format!("{}.doc.tsv", options.prefix_output)).exists()
-        && !options.overwrite
-    {
-        return Err(Error::OutputFileExists());
-    }
-    if options.path_snv_vcf.is_some()
-        && Path::new(&format!("{}.baf.tsv", options.prefix_output)).exists()
+        && Path::new(&options.path_output).exists()
         && !options.overwrite
     {
         return Err(Error::OutputFileExists());
@@ -771,11 +753,11 @@ mod tests {
         path_doc_evidence: Option<String>,
         path_snv_vcf: Option<String>,
         path_input: &str,
-        path_expected_prefix: &str,
+        path_expected: &str,
         regions: &Option<Vec<Interval>>,
         config_text: &str,
     ) -> Result<(), super::Error> {
-        let prefix_output = String::from(tmp_dir.path().join("out").to_str().unwrap());
+        let path_output = String::from(tmp_dir.path().join("out.vcf").to_str().unwrap());
         let options = super::Options {
             verbosity: 1, // disable progress bar
             regions: regions.clone(),
@@ -785,39 +767,17 @@ mod tests {
             path_snv_vcf: path_snv_vcf,
             sample: sample.to_string(),
             path_input: path_input.to_string(),
-            prefix_output: prefix_output.clone(),
+            path_output: path_output.clone(),
             overwrite: false,
         };
         let config: super::Config = toml::from_str(config_text).unwrap();
 
         super::perform_annotation(&options, &config)?;
 
-        if options.path_pesr_evidence.is_some() {
-            assert_eq!(
-                fs::read_to_string(format!("{}.pe.tsv", path_expected_prefix)).unwrap(),
-                fs::read_to_string(format!("{}.pe.tsv", prefix_output)).unwrap(),
-                "paired-end",
-            );
-            assert_eq!(
-                fs::read_to_string(format!("{}.sr.tsv", path_expected_prefix)).unwrap(),
-                fs::read_to_string(format!("{}.sr.tsv", prefix_output)).unwrap(),
-                "split-read",
-            );
-        }
-        if options.path_doc_evidence.is_some() {
-            assert_eq!(
-                fs::read_to_string(format!("{}.doc.tsv", path_expected_prefix)).unwrap(),
-                fs::read_to_string(format!("{}.doc.tsv", prefix_output)).unwrap(),
-                "depth-of-coverage",
-            );
-        }
-        if options.path_snv_vcf.is_some() {
-            assert_eq!(
-                fs::read_to_string(format!("{}.baf.tsv", path_expected_prefix)).unwrap(),
-                fs::read_to_string(format!("{}.baf.tsv", prefix_output)).unwrap(),
-                "b-allele-fraction",
-            );
-        }
+        assert_eq!(
+            fs::read_to_string(path_expected).unwrap(),
+            fs::read_to_string(path_output).unwrap(),
+        );
 
         Ok(())
     }
@@ -832,7 +792,7 @@ mod tests {
             Some(String::from("./src/tests/data/ex-delly-doc.vcf.gz")),
             None, // Some(String::from("./src/tests/data/ex-delly-snv.vcf.gz")),
             "./src/tests/data/ex-delly-svs.vcf.gz",
-            "./src/tests/data/ex-delly.expected",
+            "./src/tests/data/ex-delly.expected.vcf",
             &None,
             "",
         )?;
@@ -849,7 +809,7 @@ mod tests {
             Some(String::from("./src/tests/data/ex-delly-doc.vcf.gz")),
             None, // Some(String::from("./src/tests/data/ex-delly-snv.vcf.gz")),
             "./src/tests/data/ex-delly-svs.vcf.gz",
-            "./src/tests/data/ex-delly.expected-blocked",
+            "./src/tests/data/ex-delly.expected-blocked.vcf",
             &None,
             "blocked_regions_bed = \"./src/tests/data/ex-delly-blocked.bed\"",
         )?;

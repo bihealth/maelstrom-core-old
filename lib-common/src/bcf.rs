@@ -85,6 +85,10 @@ pub fn build_vcf_header(template: &bcf::header::HeaderView) -> Result<bcf::Heade
         ("cnmops", "1", "Integer", "Called by cnMOPS"),
         ("delly", "1", "Integer", "Called by Delly"),
         ("manta", "1", "Integer", "Called by Manta"),
+        ("PR", "1", "Float", "Paired read evidence"),
+        ("SR", "1", "Float", "Split read evidence"),
+        ("RD", "1", "Float", "Read depth evidence"),
+        ("BF", "1", "Float", "B allele frequency evidence"),
     ];
     for (id, number, type_, desc) in formats {
         header.push_record(

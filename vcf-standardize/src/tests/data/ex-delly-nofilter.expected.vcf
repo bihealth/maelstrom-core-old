@@ -18,6 +18,10 @@
 ##FORMAT=<ID=cnmops,Number=1,Type=Integer,Description=Called by cnMOPS>
 ##FORMAT=<ID=delly,Number=1,Type=Integer,Description=Called by Delly>
 ##FORMAT=<ID=manta,Number=1,Type=Integer,Description=Called by Manta>
+##FORMAT=<ID=PR,Number=1,Type=Float,Description=Paired read evidence>
+##FORMAT=<ID=SR,Number=1,Type=Float,Description=Split read evidence>
+##FORMAT=<ID=RD,Number=1,Type=Float,Description=Read depth evidence>
+##FORMAT=<ID=BF,Number=1,Type=Float,Description=B allele frequency evidence>
 #CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	A15-N1-DNA1-WGS1
 1	10000	.	A	<DEL>	0	.	END2=20000;CHR2=1;SVTYPE=DEL;STRANDS=+-;SVLEN=10001;ALGORITHMS=delly	GT:delly	0/1:1
 1	10001	.	A	<DUP>	0	.	END2=20000;CHR2=1;SVTYPE=DUP;STRANDS=-+;SVLEN=10000;ALGORITHMS=delly	GT:delly	0/1:1

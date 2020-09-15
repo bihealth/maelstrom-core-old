@@ -21,9 +21,18 @@ pub enum Error {
     /// Invalid breakend.
     #[error("invalid BND ALT string")]
     InvalidBND(),
+    /// Invalid path given.
+    #[error("invalid path")]
+    InvalidPath(),
     /// Problem reading BED file.
     #[error("Invalid BED file")]
     InvalidBEDFile(String),
+    /// Problem reading from CSV file.
+    #[error("Problem reading from CSV file")]
+    ProblemReadingCSV {
+        #[from]
+        source: csv::Error, // TODO: add experimental backtrace feature?
+    },
     /// Problem with file I/O.
     #[error("problem with I/O")]
     Io {

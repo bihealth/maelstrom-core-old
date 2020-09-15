@@ -18,6 +18,8 @@ use lib_config::Config;
 
 mod agg;
 use agg::{BamRecordAggregator, CoverageAggregator, FragmentsAggregator};
+mod reference;
+use reference::ReferenceStats;
 
 /// Command line options
 #[derive(Debug)]
@@ -101,6 +103,10 @@ fn build_header(samples: &[String], contigs: &[Interval]) -> bcf::Header {
         "##INFO=<ID=END,Number=1,Type=Integer,Description=\"Window end\">",
         "##INFO=<ID=MEAN_MAPQ,Number=1,Type=Float,Description=\"Mean MAPQ value across samples \
          for approximating mapability\">",
+        "##INFO=<ID=GC,Number=1,Type=Float,Description=\"Reference GC fraction, if reference \
+         FASTA file was given\">",
+        "##INFO=<ID=GAP,Number=0,Type=Flag,Description=\"Window overlaps with N in \
+         reference (gap)\">",
         // Generic FORMAT fields
         "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">",
         "##FORMAT=<ID=MQ,Number=1,Type=Float,Description=\"Mean read MAPQ from region\">",
@@ -145,6 +151,13 @@ fn process_region(
         (contig.range().start + 1).separated_string(),
         contig.range().end.separated_string(),
     );
+
+    let window_length = config.collect_doc_config.window_length;
+    let ref_stats = config
+        .path_reference_fasta
+        .as_ref()
+        .map(|path| ReferenceStats::from_path(path, contig.contig(), window_length))
+        .transpose()?;
 
     let mut aggregator: Box<dyn BamRecordAggregator> =
         match config.collect_doc_config.count_kind.as_str() {
@@ -226,6 +239,16 @@ fn process_region(
 
         // Columns: INFO
         record.push_info_integer(b"END", &[window_end as i32])?;
+        if let Some(ref_stats) = ref_stats.as_ref() {
+            let bucket = pos / window_length;
+            let gc = ref_stats.gc_content[bucket];
+            if !gc.is_nan() {
+                record.push_info_float(b"GC", &[gc])?;
+            }
+            if ref_stats.has_gap[bucket] {
+                record.push_info_flag(b"GAP")?;
+            }
+        }
 
         // Columns: FORMAT/GT
         record.push_format_integer(b"GT", &[0, 0])?;

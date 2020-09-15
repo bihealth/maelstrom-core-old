@@ -166,6 +166,10 @@ fn default_doc_annotation_min_bins() -> usize {
     10
 }
 
+fn default_path_reference_fasta() -> Option<String> {
+    None
+}
+
 /// Program configuration, from config file.
 #[derive(Deserialize, Debug, Clone)]
 pub struct Config {
@@ -242,4 +246,8 @@ pub struct Config {
     /// Minimal number of bins for DoC annotation.
     #[serde(default = "default_doc_annotation_min_bins")]
     pub doc_annotation_min_bins: usize,
+
+    /// Path to FAI-indexed FASTA file for reading out GC content.
+    #[serde(default = "default_path_reference_fasta")]
+    pub path_reference_fasta: Option<String>,
 }

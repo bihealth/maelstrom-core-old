@@ -345,6 +345,8 @@ fn annotate_pesr(
         let record = sv::StandardizedRecord::from_bcf_record(&mut record)?;
         // Define a couple of shortcuts to make the matching code below more compact.
         use ReqStrand::{Forward, Reverse};
+        let slack = config.annotate_read_evidence_slack as usize;
+        let slacki = config.annotate_read_evidence_slack as isize;
         let delta = config.annotate_read_evidence_max_dist as usize;
         let deltai = delta as isize;
         let chrom = &record.chrom;
@@ -356,34 +358,34 @@ fn annotate_pesr(
 
         let search_wheres = match (&record.sv_type[..], &record.strands[..]) {
             ("DEL", _) => vec![(
-                SeqContigStranded::new(chrom.clone(), f(pos, deltai), delta, Forward),
-                SeqContigStranded::new(chrom2.clone(), end2, delta, Reverse),
+                SeqContigStranded::new(chrom.clone(), f(pos, deltai), delta + slack, Forward),
+                SeqContigStranded::new(chrom2.clone(), end2 - slacki, delta + slack, Reverse),
             )],
             ("DUP", _) => vec![(
-                SeqContigStranded::new(chrom.clone(), pos, delta, Reverse),
-                SeqContigStranded::new(chrom2.clone(), end2 - deltai, delta, Forward),
+                SeqContigStranded::new(chrom.clone(), pos - slacki, delta + slack, Reverse),
+                SeqContigStranded::new(chrom2.clone(), end2 - deltai, delta + slack, Forward),
             )],
             ("INV", _) => vec![
                 (
-                    SeqContigStranded::new(chrom.clone(), f(pos, deltai), delta, Forward),
-                    SeqContigStranded::new(chrom2.clone(), f(end2, deltai), delta, Forward),
+                    SeqContigStranded::new(chrom.clone(), f(pos, deltai), delta + slack, Forward),
+                    SeqContigStranded::new(chrom2.clone(), f(end2, deltai), delta + slack, Forward),
                 ),
                 (
-                    SeqContigStranded::new(chrom.clone(), pos, delta, Reverse),
-                    SeqContigStranded::new(chrom2.clone(), f(end2, deltai), delta, Reverse),
+                    SeqContigStranded::new(chrom.clone(), pos - slacki, delta + slack, Reverse),
+                    SeqContigStranded::new(chrom2.clone(), f(end2, deltai), delta + slack, Reverse),
                 ),
             ],
             ("BND", "--") | ("BND", "++") => vec![(
-                SeqContigStranded::new(chrom.clone(), pos, delta, Reverse),
-                SeqContigStranded::new(chrom2.clone(), end2, delta, Reverse),
+                SeqContigStranded::new(chrom.clone(), pos - slacki, delta + slack, Reverse),
+                SeqContigStranded::new(chrom2.clone(), end2 - slacki, delta + slack, Reverse),
             )],
             ("BND", "-+") => vec![(
-                SeqContigStranded::new(chrom.clone(), pos, delta, Reverse),
-                SeqContigStranded::new(chrom2.clone(), f(end2, deltai), delta, Reverse),
+                SeqContigStranded::new(chrom.clone(), pos - slacki, delta + slack, Reverse),
+                SeqContigStranded::new(chrom2.clone(), f(end2, deltai), delta + slack, Reverse),
             )],
             ("BND", "+-") => vec![(
-                SeqContigStranded::new(chrom.clone(), f(pos, deltai), delta, Forward),
-                SeqContigStranded::new(chrom2.clone(), end2, delta, Reverse),
+                SeqContigStranded::new(chrom.clone(), f(pos, deltai), delta + slack, Forward),
+                SeqContigStranded::new(chrom2.clone(), end2 - slacki, delta + slack, Reverse),
             )],
             _ => panic!(format!(
                 "Unknown SV/strands combination: {}/{}",

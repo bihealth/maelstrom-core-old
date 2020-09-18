@@ -553,6 +553,8 @@ fn annotate_baf(
             if baf_reader.fetch(rid, start, end).is_ok() {
                 let mut bafs = Vec::new();
                 while baf_reader.read(&mut baf_record)? {
+                    // TODO#1: count het SNVs in region and two equally sized flanking regions
+                    // TODO#2: implement ROH detection (<50 het. SNVs >100kbp, or <5/10kbp <100kbp in region and one flanking region)
                     let genotype: bcf::record::Genotype = baf_record.genotypes().unwrap().get(0);
                     let gt0 = genotype.get(0).unwrap().index().unwrap_or(0) as usize;
                     let gt1 = genotype.get(1).unwrap().index().unwrap_or(0) as usize;

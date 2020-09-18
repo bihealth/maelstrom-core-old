@@ -9,7 +9,9 @@ FILES := \
 	ex-delly-pesr.tsv.gz \
 	ex-delly-pesr.tsv.gz.tbi \
 	ex-delly-svs.vcf.gz \
-	ex-delly-svs.vcf.gz.tbi
+	ex-delly-svs.vcf.gz.tbi \
+	ex-delly-snvs.vcf.gz \
+	ex-delly-snvs.vcf.gz.tbi
 
 .PHONY: default
 default: $(FILES)

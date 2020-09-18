@@ -1,0 +1,19 @@
+##fileformat=VCFv4.2
+##FILTER=<ID=PASS,Description="All filters passed">
+##contig=<ID=one,length=1000>
+##contig=<ID=two,length=1000>
+##FORMAT=<ID=AD,Number=R,Type=Integer,Description="Allelic depths for the ref and alt alleles in the order listed">
+##FORMAT=<ID=DP,Number=1,Type=Integer,Description="Approximate read depth (reads with MQ=255 or with bad mates are filtered)">
+##FORMAT=<ID=GQ,Number=1,Type=Integer,Description="Genotype Quality">
+##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	sample-1
+one	190	.	A	C	0	.	.	GT:AD:DP	0/1:0,20:20
+one	210	.	A	C	0	.	.	GT:AD:DP	0/1:10,10:20
+one	215	.	A	CT	0	.	.	GT:AD:DP	0/1:1,19:20
+one	220	.	A	C	0	.	.	GT:AD:DP	0/1:11,9:20
+one	230	.	A	C	0	.	.	GT:AD:DP	0/1:9,11:20
+one	240	.	A	C	0	.	.	GT:AD:DP	0/1:5,15:20
+one	250	.	A	C	0	.	.	GT:AD:DP	0/1:15,5:20
+one	410	.	A	C	0	.	.	GT:AD:DP	0/1:0,20:20
+two	190	.	A	C	0	.	.	GT:AD:DP	0/1:0,20:20
+two	410	.	A	C	0	.	.	GT:AD:DP	0/1:0,20:20

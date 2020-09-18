@@ -498,20 +498,76 @@ fn annotate_doc(
 /// B alelel frequency evidence
 #[derive(Debug, PartialEq, PartialOrd)]
 struct BAFEvidence {
-    /// ID of the called SV
-    sv_id: String,
     /// BAF value
-    baf: f64,
+    baf_mean: f64,
 }
 
 /// Perform BAF annotation of SV.
 fn annotate_baf(
-    _options: &Options,
+    options: &Options,
     _config: &Config,
-    _region: &Interval,
+    region: &Interval,
 ) -> Result<Vec<BAFEvidence>, Error> {
-    panic!("BAF analysis not implemented yet!");
-    // Ok(vec![])
+    let mut reader = bcf::IndexedReader::from_path(&options.path_input)?;
+    let res = reader.fetch(
+        reader.header().name2rid(region.contig().as_bytes())?,
+        region.range().start,
+        region.range().end,
+    );
+    match res {
+        Err(rust_htslib::bcf::errors::Error::Seek { .. }) => return Ok(vec![]),
+        Err(_) => res?,
+        Ok(_) => (),
+    }
+
+    let mut baf_reader = bcf::IndexedReader::from_path(options.path_snv_vcf.clone().unwrap())?;
+    let mut baf_record = baf_reader.empty_record();
+
+    let mut record = reader.empty_record();
+    let mut result = Vec::new();
+    while reader.read(&mut record)? {
+        let record = sv::StandardizedRecord::from_bcf_record(&mut record)?;
+
+        let baf_mean =
+            if record.sv_type == "DEL" || record.sv_type == "DUP" || record.sv_type == "CNV" {
+                let rid: u32 = baf_reader.header().name2rid(record.chrom.as_bytes())?;
+                if baf_reader
+                    .fetch(rid, record.pos as u64, record.end2 as u64)
+                    .is_ok()
+                {
+                    let mut bafs = Vec::new();
+                    while baf_reader.read(&mut baf_record)? {
+                        let genotype: bcf::record::Genotype =
+                            baf_record.genotypes().unwrap().get(0);
+                        let gt0 = genotype.get(0).unwrap().index().unwrap_or(0) as usize;
+                        let gt1 = genotype.get(1).unwrap().index().unwrap_or(0) as usize;
+                        if baf_record.alleles().len() == 2  // only biallelic SNVs
+                            && baf_record.alleles()[0].len() == 1
+                            && baf_record.alleles()[1].len() == 1
+                        {
+                            let a0 = baf_record.format(b"AD").integer()?[0][gt0] as f64;
+                            let a1 = baf_record.format(b"AD").integer()?[0][gt1] as f64;
+                            println!("{} -- {} // {}", baf_record.pos(), a0, a1);
+                            bafs.push(a1 / (a0 + a1));
+                        }
+                    }
+
+                    if bafs.is_empty() {
+                        std::f64::NAN
+                    } else {
+                        bafs.mean()
+                    }
+                } else {
+                    std::f64::NAN
+                }
+            } else {
+                std::f64::NAN
+            };
+
+        result.push(BAFEvidence { baf_mean });
+    }
+
+    Ok(result)
 }
 
 /// Load DoC from file and compute median.
@@ -561,7 +617,9 @@ fn write_annotated(
         }
         if let Some(evidence) = baf_evidence {
             let elem = evidence.get(idx).unwrap();
-            record.push_format_float(b"BF", &[elem.baf as f32])?;
+            if !elem.baf_mean.is_nan() {
+                record.push_format_float(b"BF", &[elem.baf_mean as f32])?;
+            }
         }
 
         writer.translate(&mut record);
@@ -790,7 +848,7 @@ mod tests {
             "sample-1",
             Some(String::from("./src/tests/data/ex-delly-pesr.tsv.gz")),
             Some(String::from("./src/tests/data/ex-delly-doc.vcf.gz")),
-            None, // Some(String::from("./src/tests/data/ex-delly-snv.vcf.gz")),
+            Some(String::from("./src/tests/data/ex-delly-snvs.vcf.gz")),
             "./src/tests/data/ex-delly-svs.vcf.gz",
             "./src/tests/data/ex-delly.expected.vcf",
             &None,
@@ -807,7 +865,7 @@ mod tests {
             "sample-1",
             Some(String::from("./src/tests/data/ex-delly-pesr.tsv.gz")),
             Some(String::from("./src/tests/data/ex-delly-doc.vcf.gz")),
-            None, // Some(String::from("./src/tests/data/ex-delly-snv.vcf.gz")),
+            Some(String::from("./src/tests/data/ex-delly-snvs.vcf.gz")),
             "./src/tests/data/ex-delly-svs.vcf.gz",
             "./src/tests/data/ex-delly.expected-blocked.vcf",
             &None,

@@ -19,5 +19,5 @@
 ##FORMAT=<ID=RD,Number=1,Type=Float,Description=Read depth evidence>
 ##FORMAT=<ID=BF,Number=1,Type=Float,Description=B allele frequency evidence>
 #CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	sample-1
-one	201	SV1	A	<DEL>	0	.	END2=400;CHR2=one;SVTYPE=DEL;STRANDS=+-;SVLEN=300;ALGORITHMS=delly	GT:delly:PR:SR:RD	0/1:1:1:1:0.5
+one	201	SV1	A	<DEL>	0	.	END2=400;CHR2=one;SVTYPE=DEL;STRANDS=+-;SVLEN=300;ALGORITHMS=delly	GT:delly:PR:SR:RD:BF	0/1:1:1:1:0.5:0.5
 two	201	SV2	A	<DUP>	0	.	END2=400;CHR2=two;SVTYPE=DUP;STRANDS=-+;SVLEN=300;ALGORITHMS=delly	GT:delly:PR:SR:RD	0/1:1:1:0:2

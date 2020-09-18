@@ -257,5 +257,5 @@ pub struct Config {
 
     /// Maximal length of CNV to annotate full-length with DoC and BAF.
     #[serde(default = "default_annotation_doc_baf_limit")]
-    pub annotation_doc_baf_limit: usize
+    pub annotation_doc_baf_limit: usize,
 }

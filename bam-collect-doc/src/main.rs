@@ -101,7 +101,7 @@ fn build_header(samples: &[String], contigs: &[Interval]) -> bcf::Header {
          counting\">",
         // INFO fields describing the window
         "##INFO=<ID=END,Number=1,Type=Integer,Description=\"Window end\">",
-        "##INFO=<ID=MEAN_MAPQ,Number=1,Type=Float,Description=\"Mean MAPQ value across samples \
+        "##INFO=<ID=MAPQ,Number=1,Type=Float,Description=\"Mean MAPQ value across samples \
          for approximating mapability\">",
         "##INFO=<ID=GC,Number=1,Type=Float,Description=\"Reference GC fraction, if reference \
          FASTA file was given\">",
@@ -260,7 +260,7 @@ fn process_region(
         }
 
         record.push_format_float(b"MQ", &[stats.mean_mapq])?;
-        record.push_info_float(b"MEAN_MAPQ", &[stats.mean_mapq])?;
+        record.push_info_float(b"MAPQ", &[stats.mean_mapq])?;
 
         bcf_writer.write(&record)?;
     }

@@ -170,6 +170,10 @@ fn default_path_reference_fasta() -> Option<String> {
     None
 }
 
+fn default_annotation_doc_baf_limit() -> usize {
+    1_000_000
+}
+
 /// Program configuration, from config file.
 #[derive(Deserialize, Debug, Clone)]
 pub struct Config {
@@ -250,4 +254,8 @@ pub struct Config {
     /// Path to FAI-indexed FASTA file for reading out GC content.
     #[serde(default = "default_path_reference_fasta")]
     pub path_reference_fasta: Option<String>,
+
+    /// Maximal length of CNV to annotate full-length with DoC and BAF.
+    #[serde(default = "default_annotation_doc_baf_limit")]
+    pub annotation_doc_baf_limit: usize
 }

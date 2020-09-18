@@ -16,7 +16,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 use log::{debug, info, LevelFilter};
 use rust_htslib::{bcf, bcf::Read};
 
-use lib_common::bcf::{collect_contigs, guess_bcf_format, build_vcf_header};
+use lib_common::bcf::{build_vcf_header, collect_contigs, guess_bcf_format};
 use lib_common::bed_to_annot_map;
 use lib_common::error::Error;
 use lib_common::parse_region;
@@ -456,11 +456,17 @@ fn annotate_doc(
 
         let norm_cov =
             if record.sv_type == "DEL" || record.sv_type == "DUP" || record.sv_type == "CNV" {
+                let annotation_doc_baf_limit = config.annotation_doc_baf_limit as i64;
+                let (start, end) = if record.end2 - record.pos > annotation_doc_baf_limit as i64 {
+                    let shift =
+                        (record.end2 - record.pos - annotation_doc_baf_limit as i64) as u64 / 2;
+                    (record.pos as u64 + shift, record.end2 as u64 - shift)
+                } else {
+                    (record.pos as u64, record.end2 as u64)
+                };
+
                 let rid: u32 = doc_reader.header().name2rid(record.chrom.as_bytes())?;
-                if doc_reader
-                    .fetch(rid, record.pos as u64, record.end2 as u64)
-                    .is_ok()
-                {
+                if doc_reader.fetch(rid, start, end).is_ok() {
                     let mut doc_windows = Vec::new();
                     while doc_reader.read(&mut doc_record)? {
                         doc_windows.push(DocWindow {
@@ -505,7 +511,7 @@ struct BAFEvidence {
 /// Perform BAF annotation of SV.
 fn annotate_baf(
     options: &Options,
-    _config: &Config,
+    config: &Config,
     region: &Interval,
 ) -> Result<Vec<BAFEvidence>, Error> {
     let mut reader = bcf::IndexedReader::from_path(&options.path_input)?;
@@ -528,41 +534,47 @@ fn annotate_baf(
     while reader.read(&mut record)? {
         let record = sv::StandardizedRecord::from_bcf_record(&mut record)?;
 
-        let baf_mean =
-            if record.sv_type == "DEL" || record.sv_type == "DUP" || record.sv_type == "CNV" {
-                let rid: u32 = baf_reader.header().name2rid(record.chrom.as_bytes())?;
-                if baf_reader
-                    .fetch(rid, record.pos as u64, record.end2 as u64)
-                    .is_ok()
-                {
-                    let mut bafs = Vec::new();
-                    while baf_reader.read(&mut baf_record)? {
-                        let genotype: bcf::record::Genotype =
-                            baf_record.genotypes().unwrap().get(0);
-                        let gt0 = genotype.get(0).unwrap().index().unwrap_or(0) as usize;
-                        let gt1 = genotype.get(1).unwrap().index().unwrap_or(0) as usize;
-                        if baf_record.alleles().len() == 2  // only biallelic SNVs
+        let baf_mean = if record.sv_type == "DEL"
+            || record.sv_type == "DUP"
+            || record.sv_type == "CNV"
+        {
+            let annotation_doc_baf_limit = config.annotation_doc_baf_limit as i64;
+            let (start, end) = if record.end2 - record.pos > annotation_doc_baf_limit as i64 {
+                let shift = (record.end2 - record.pos - annotation_doc_baf_limit as i64) as u64 / 2;
+                (record.pos as u64 + shift, record.end2 as u64 - shift)
+            } else {
+                (record.pos as u64, record.end2 as u64)
+            };
+
+            let rid: u32 = baf_reader.header().name2rid(record.chrom.as_bytes())?;
+            if baf_reader.fetch(rid, start, end).is_ok() {
+                let mut bafs = Vec::new();
+                while baf_reader.read(&mut baf_record)? {
+                    let genotype: bcf::record::Genotype = baf_record.genotypes().unwrap().get(0);
+                    let gt0 = genotype.get(0).unwrap().index().unwrap_or(0) as usize;
+                    let gt1 = genotype.get(1).unwrap().index().unwrap_or(0) as usize;
+                    if baf_record.alleles().len() == 2  // only biallelic SNVs
                             && baf_record.alleles()[0].len() == 1
                             && baf_record.alleles()[1].len() == 1
-                        {
-                            let a0 = baf_record.format(b"AD").integer()?[0][gt0] as f64;
-                            let a1 = baf_record.format(b"AD").integer()?[0][gt1] as f64;
-                            debug!("{} -- {} // {}", baf_record.pos(), a0, a1);
-                            bafs.push(a1 / (a0 + a1));
-                        }
+                    {
+                        let a0 = baf_record.format(b"AD").integer()?[0][gt0] as f64;
+                        let a1 = baf_record.format(b"AD").integer()?[0][gt1] as f64;
+                        debug!("{} -- {} // {}", baf_record.pos(), a0, a1);
+                        bafs.push(a1 / (a0 + a1));
                     }
+                }
 
-                    if bafs.is_empty() {
-                        std::f64::NAN
-                    } else {
-                        bafs.mean()
-                    }
-                } else {
+                if bafs.is_empty() {
                     std::f64::NAN
+                } else {
+                    bafs.mean()
                 }
             } else {
                 std::f64::NAN
-            };
+            }
+        } else {
+            std::f64::NAN
+        };
 
         result.push(BAFEvidence { baf_mean });
     }

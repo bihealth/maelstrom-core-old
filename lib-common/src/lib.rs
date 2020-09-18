@@ -69,6 +69,7 @@ where
         let start = arr[1].parse::<isize>()?;
         let end = arr[2].parse::<isize>()?;
 
+        #[allow(clippy::or_fun_call)]
         let rid = contig_map
             .get(arr[0])
             .ok_or(Error::InvalidBEDFile(format!("Unknown contig: {}", arr[0])))?;

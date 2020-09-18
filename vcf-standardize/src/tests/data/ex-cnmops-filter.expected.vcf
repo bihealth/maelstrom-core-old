@@ -22,6 +22,10 @@
 ##FORMAT=<ID=SR,Number=1,Type=Float,Description=Split read evidence>
 ##FORMAT=<ID=RD,Number=1,Type=Float,Description=Read depth evidence>
 ##FORMAT=<ID=BF,Number=1,Type=Float,Description=B allele frequency evidence>
+##FORMAT=<ID=VL,Number=1,Type=Integer,Description=SNV count left of CNV region>
+##FORMAT=<ID=VM,Number=1,Type=Integer,Description=SNV count within CNV region>
+##FORMAT=<ID=VR,Number=1,Type=Integer,Description=SNV count right of CNV region>
+##FORMAT=<ID=LOH,Number=1,Type=Integer,Description=Loss of heterozygosity called in sample>
 #CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	R16_59-N1-DNA1-WGS1
 1	10001	.	N	<CNV>	0	.	END2=30000;CHR2=1;SVTYPE=DEL;SVLEN=20000;ALGORITHMS=cnmops	GT:cnmops	1:1
 2	10001	.	N	<CNV>	0	.	END2=20000;CHR2=2;SVTYPE=DEL;SVLEN=10000;ALGORITHMS=cnmops	GT:cnmops	1:1

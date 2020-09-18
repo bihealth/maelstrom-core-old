@@ -504,19 +504,36 @@ fn annotate_doc(
     Ok(result)
 }
 
-/// B alelel frequency evidence
+/// Het SNV frequency / count evidence
 #[derive(Debug, PartialEq, PartialOrd)]
-struct BAFEvidence {
+struct SNVEvidence {
+    /// Number of SNVs in left flanking region.
+    snvs_left: i32,
+    /// Number of SNVs within region.
+    snvs_within: i32,
+    /// Number of SNVs in right flanking region.
+    snvs_right: i32,
     /// BAF value
-    baf_mean: f64,
+    baf_mean: f32,
+}
+
+impl SNVEvidence {
+    fn new() -> Self {
+        return Self {
+            snvs_left: 0,
+            snvs_within: 0,
+            snvs_right: 0,
+            baf_mean: std::f32::NAN,
+        };
+    }
 }
 
 /// Perform BAF annotation of SV.
-fn annotate_baf(
+fn annotate_snv(
     options: &Options,
     config: &Config,
     region: &Interval,
-) -> Result<Vec<BAFEvidence>, Error> {
+) -> Result<Vec<SNVEvidence>, Error> {
     let mut reader = bcf::IndexedReader::from_path(&options.path_input)?;
     let res = reader.fetch(
         reader.header().name2rid(region.contig().as_bytes())?,
@@ -537,19 +554,55 @@ fn annotate_baf(
     while reader.read(&mut record)? {
         let record = sv::StandardizedRecord::from_bcf_record(&mut record)?;
 
-        let baf_mean = if record.sv_type == "DEL"
+        let snv_evidence = if record.sv_type == "DEL"
             || record.sv_type == "DUP"
             || record.sv_type == "CNV"
         {
+            let rid: u32 = baf_reader.header().name2rid(record.chrom.as_bytes())?;
             let annotation_doc_baf_limit = config.annotation_doc_baf_limit as i64;
+
             let (start, end) = if record.end2 - record.pos > annotation_doc_baf_limit as i64 {
                 let shift = (record.end2 - record.pos - annotation_doc_baf_limit as i64) as u64 / 2;
                 (record.pos as u64 + shift, record.end2 as u64 - shift)
             } else {
                 (record.pos as u64, record.end2 as u64)
             };
+            let length = end - start;
 
-            let rid: u32 = baf_reader.header().name2rid(record.chrom.as_bytes())?;
+            // Count SNVs left of CNV.
+            let mut snvs_left: i32 = 0;
+            if baf_reader.fetch(rid, start - length, start).is_ok() {
+                while baf_reader.read(&mut baf_record)? {
+                    let genotype: bcf::record::Genotype = baf_record.genotypes().unwrap().get(0);
+                    let gt0 = genotype.get(0).unwrap().index().unwrap_or(0) as usize;
+                    let gt1 = genotype.get(1).unwrap().index().unwrap_or(0) as usize;
+                    if baf_record.alleles().len() == 2  // only biallelic SNVs
+                            && baf_record.alleles()[0].len() == 1
+                            && baf_record.alleles()[1].len() == 1
+                            && gt0 != gt1
+                    {
+                        snvs_left += 1;
+                    }
+                }
+            }
+
+            // Count SNVs right of CNV.
+            let mut snvs_right: i32 = 0;
+            if baf_reader.fetch(rid, start - length, start).is_ok() {
+                while baf_reader.read(&mut baf_record)? {
+                    let genotype: bcf::record::Genotype = baf_record.genotypes().unwrap().get(0);
+                    let gt0 = genotype.get(0).unwrap().index().unwrap_or(0) as usize;
+                    let gt1 = genotype.get(1).unwrap().index().unwrap_or(0) as usize;
+                    if baf_record.alleles().len() == 2  // only biallelic SNVs
+                            && baf_record.alleles()[0].len() == 1
+                            && baf_record.alleles()[1].len() == 1
+                            && gt0 != gt1
+                    {
+                        snvs_right += 1;
+                    }
+                }
+            }
+
             if baf_reader.fetch(rid, start, end).is_ok() {
                 let mut bafs = Vec::new();
                 while baf_reader.read(&mut baf_record)? {
@@ -561,6 +614,7 @@ fn annotate_baf(
                     if baf_record.alleles().len() == 2  // only biallelic SNVs
                             && baf_record.alleles()[0].len() == 1
                             && baf_record.alleles()[1].len() == 1
+                            && gt0 != gt1
                     {
                         let a0 = baf_record.format(b"AD").integer()?[0][gt0] as f64;
                         let a1 = baf_record.format(b"AD").integer()?[0][gt1] as f64;
@@ -569,19 +623,24 @@ fn annotate_baf(
                     }
                 }
 
-                if bafs.is_empty() {
-                    std::f64::NAN
-                } else {
-                    bafs.mean()
+                SNVEvidence {
+                    snvs_left,
+                    snvs_right,
+                    snvs_within: bafs.len() as i32,
+                    baf_mean: if bafs.is_empty() {
+                        std::f32::NAN
+                    } else {
+                        bafs.mean() as f32
+                    },
                 }
             } else {
-                std::f64::NAN
+                SNVEvidence::new()
             }
         } else {
-            std::f64::NAN
+            SNVEvidence::new()
         };
 
-        result.push(BAFEvidence { baf_mean });
+        result.push(snv_evidence);
     }
 
     Ok(result)
@@ -605,7 +664,7 @@ fn write_annotated(
     region: &Interval,
     read_evidence: &Option<Vec<ReadEvidenceCount>>,
     doc_evidence: &Option<Vec<CoverageEvidence>>,
-    baf_evidence: &Option<Vec<BAFEvidence>>,
+    baf_evidence: &Option<Vec<SNVEvidence>>,
     writer: &mut bcf::Writer,
 ) -> Result<(), Error> {
     let mut reader = bcf::IndexedReader::from_path(&options.path_input)?;
@@ -636,6 +695,9 @@ fn write_annotated(
         }
         if let Some(evidence) = baf_evidence {
             let elem = evidence.get(idx).unwrap();
+            record.push_format_integer(b"VL", &[elem.snvs_left as i32])?;
+            record.push_format_integer(b"VM", &[elem.snvs_within as i32])?;
+            record.push_format_integer(b"VR", &[elem.snvs_right as i32])?;
             if !elem.baf_mean.is_nan() {
                 record.push_format_float(b"BF", &[elem.baf_mean as f32])?;
             }
@@ -728,7 +790,7 @@ fn perform_annotation(options: &Options, config: &Config) -> Result<(), Error> {
         let baf_evidence = options
             .path_snv_vcf
             .as_ref()
-            .map(|_| annotate_baf(&options, &config, &region))
+            .map(|_| annotate_snv(&options, &config, &region))
             .transpose()?;
 
         write_annotated(

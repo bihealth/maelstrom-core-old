@@ -475,11 +475,12 @@ fn annotate_doc(
                         });
                     }
 
-                    let q0_windows = doc_windows.iter().filter(|w| w.mapq >= 1.0).count();
+                    let min_mapq = 55.0;
+                    let q0_windows = doc_windows.iter().filter(|w| w.mapq >= min_mapq).count();
                     let do_filter = q0_windows >= config.doc_annotation_min_bins;
                     let covs: Vec<f64> = doc_windows
                         .iter()
-                        .filter(|w| !do_filter || w.mapq < 1.0)
+                        .filter(|w| !do_filter || w.mapq >= min_mapq)
                         .map(|w| w.cov)
                         .collect();
 

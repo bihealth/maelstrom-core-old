@@ -16,7 +16,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 use log::{debug, info, LevelFilter};
 use rust_htslib::{bcf, bcf::Read};
 
-use lib_common::bcf::{collect_contigs, guess_bcf_format};
+use lib_common::bcf::{collect_contigs, guess_bcf_format, build_vcf_header};
 use lib_common::bed_to_annot_map;
 use lib_common::error::Error;
 use lib_common::parse_region;
@@ -547,7 +547,7 @@ fn annotate_baf(
                         {
                             let a0 = baf_record.format(b"AD").integer()?[0][gt0] as f64;
                             let a1 = baf_record.format(b"AD").integer()?[0][gt1] as f64;
-                            println!("{} -- {} // {}", baf_record.pos(), a0, a1);
+                            debug!("{} -- {} // {}", baf_record.pos(), a0, a1);
                             bafs.push(a1 / (a0 + a1));
                         }
                     }
@@ -606,6 +606,8 @@ fn write_annotated(
     let mut idx = 0;
     let mut record = reader.empty_record();
     while reader.read(&mut record)? {
+        writer.translate(&mut record);
+
         if let Some(evidence) = read_evidence {
             let elem = evidence.get(idx).unwrap();
             record.push_format_float(b"PR", &[elem.pe_count as f32])?;
@@ -622,7 +624,6 @@ fn write_annotated(
             }
         }
 
-        writer.translate(&mut record);
         writer.write(&record)?;
 
         idx += 1;
@@ -645,7 +646,7 @@ fn perform_annotation(options: &Options, config: &Config) -> Result<(), Error> {
     };
 
     let reader = bcf::IndexedReader::from_path(&options.path_input)?;
-    let header = bcf::Header::from_template(reader.header());
+    let header = build_vcf_header(reader.header())?;
     let guessed = guess_bcf_format(&options.path_output);
     let mut writer = bcf::Writer::from_path(
         &options.path_output,

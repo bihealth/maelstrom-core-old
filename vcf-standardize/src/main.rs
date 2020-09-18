@@ -407,9 +407,9 @@ fn perform_extraction(options: &Options, config: &Config) -> Result<(), Error> {
     let mut buffer_read = reader.empty_record();
     for region in &regions {
         let rid = reader.header().name2rid(region.contig().as_bytes())?;
-        if !reader
+        if reader
             .fetch(rid, region.range().start, region.range().end)
-            .is_ok()
+            .is_err()
         {
             warn!("No data for {:?}", &region);
         }

@@ -9,7 +9,7 @@ bio-types = "0.7"
 bio = "0.32"
 csv = "1.1"
 regex = "1"
-rust-htslib = { git = "https://github.com/holtgrewe/rust-htslib.git", branch = "bcf-fixes" }
+rust-htslib = { git = "https://github.com/holtgrewe/rust-htslib.git", branch = "bcf-fixes2" }
 thiserror = "1"
 log = "0.4"
 lib-config = { path = "../lib-config" }

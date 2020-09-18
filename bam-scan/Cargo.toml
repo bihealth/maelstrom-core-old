@@ -9,7 +9,7 @@ bio = "0.32"
 bloom = "0.3"
 bio-types = "0.7"
 indicatif = "0.15"
-rust-htslib = { git = "https://github.com/holtgrewe/rust-htslib.git", branch = "bcf-fixes" }
+rust-htslib = { git = "https://github.com/holtgrewe/rust-htslib.git", branch = "bcf-fixes2" }
 git-version = "0.3"
 log = "0.4"
 fern = "0.5"

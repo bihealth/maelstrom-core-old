@@ -519,12 +519,12 @@ struct SNVEvidence {
 
 impl SNVEvidence {
     fn new() -> Self {
-        return Self {
+        Self {
             snvs_left: 0,
             snvs_within: 0,
             snvs_right: 0,
             baf_mean: std::f32::NAN,
-        };
+        }
     }
 }
 

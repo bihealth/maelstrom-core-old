@@ -309,9 +309,8 @@ impl BamRecordAggregator for CoverageAggregator {
         let window_length = self.base.config.window_length as usize;
 
         // Iterate over all pileups
-        let mut counter: u64 = 0;
         let mut window_id = None;
-        for pileup in reader.pileup() {
+        for (counter, pileup) in reader.pileup().enumerate() {
             let pileup = pileup.unwrap();
             let pos = pileup.pos() as usize;
 
@@ -351,7 +350,6 @@ impl BamRecordAggregator for CoverageAggregator {
             if counter % 10_000 == 0 {
                 prog(pos as i64);
             }
-            counter += 1;
         }
 
         if let Some(window_id) = window_id {

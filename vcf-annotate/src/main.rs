@@ -606,8 +606,6 @@ fn annotate_snv(
             if baf_reader.fetch(rid, start, end).is_ok() {
                 let mut bafs = Vec::new();
                 while baf_reader.read(&mut baf_record)? {
-                    // TODO#1: count het SNVs in region and two equally sized flanking regions
-                    // TODO#2: implement ROH detection (<50 het. SNVs >100kbp, or <5/10kbp <100kbp in region and one flanking region)
                     let genotype: bcf::record::Genotype = baf_record.genotypes().unwrap().get(0);
                     let gt0 = genotype.get(0).unwrap().index().unwrap_or(0) as usize;
                     let gt1 = genotype.get(1).unwrap().index().unwrap_or(0) as usize;
@@ -700,6 +698,18 @@ fn write_annotated(
             record.push_format_integer(b"VR", &[elem.snvs_right as i32])?;
             if !elem.baf_mean.is_nan() {
                 record.push_format_float(b"BF", &[elem.baf_mean as f32])?;
+            }
+
+            let length = record.info(b"SVLEN").integer()?.unwrap()[0];
+            let min_snvs = if length >= 100_000 {
+                50
+            } else {
+                5 * (length / 10_000)
+            };
+            if (elem.snvs_right < min_snvs || elem.snvs_left < min_snvs)
+                && elem.snvs_within < min_snvs
+            {
+                record.push_format_integer(b"ROH", &[1])?;
             }
         }
 

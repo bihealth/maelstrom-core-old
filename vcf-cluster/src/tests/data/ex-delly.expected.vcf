@@ -25,7 +25,7 @@
 ##FORMAT=<ID=VL,Number=1,Type=Integer,Description=SNV count left of CNV region>
 ##FORMAT=<ID=VM,Number=1,Type=Integer,Description=SNV count within CNV region>
 ##FORMAT=<ID=VR,Number=1,Type=Integer,Description=SNV count right of CNV region>
-##FORMAT=<ID=LOH,Number=1,Type=Integer,Description=Loss of heterozygosity called in sample>
+##FORMAT=<ID=ROH,Number=1,Type=Integer,Description=Run of homozygosity>
 #CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	sample-1	sample-2
 1	10001	SV00000001	N	<DEL>	0	.	END2=20001;CHR2=1;SVTYPE=DEL;STRANDS=-+;SVLEN=10001;ALGORITHMS=delly	GT:delly	0/1:1	0/1:1
 1	10003	SV00000002	N	<DUP>	0	.	END2=20000;CHR2=1;SVTYPE=DUP;STRANDS=-+;SVLEN=9998;ALGORITHMS=delly	GT:delly	0/1:1	./.:0

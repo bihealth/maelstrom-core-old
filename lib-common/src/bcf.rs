@@ -92,12 +92,7 @@ pub fn build_vcf_header(template: &bcf::header::HeaderView) -> Result<bcf::Heade
         ("VL", "1", "Integer", "SNV count left of CNV region"),
         ("VM", "1", "Integer", "SNV count within CNV region"),
         ("VR", "1", "Integer", "SNV count right of CNV region"),
-        (
-            "LOH",
-            "1",
-            "Integer",
-            "Loss of heterozygosity called in sample",
-        ),
+        ("ROH", "1", "Integer", "Run of homozygosity"),
     ];
     for (id, number, type_, desc) in formats {
         header.push_record(

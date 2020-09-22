@@ -517,23 +517,12 @@ struct SNVEvidence {
     baf_mean: f32,
 }
 
-impl SNVEvidence {
-    fn new() -> Self {
-        Self {
-            snvs_left: 0,
-            snvs_within: 0,
-            snvs_right: 0,
-            baf_mean: std::f32::NAN,
-        }
-    }
-}
-
 /// Perform BAF annotation of SV.
 fn annotate_snv(
     options: &Options,
     config: &Config,
     region: &Interval,
-) -> Result<Vec<SNVEvidence>, Error> {
+) -> Result<Vec<Option<SNVEvidence>>, Error> {
     let mut reader = bcf::IndexedReader::from_path(&options.path_input)?;
     let res = reader.fetch(
         reader.header().name2rid(region.contig().as_bytes())?,
@@ -621,7 +610,7 @@ fn annotate_snv(
                     }
                 }
 
-                SNVEvidence {
+                Some(SNVEvidence {
                     snvs_left,
                     snvs_right,
                     snvs_within: bafs.len() as i32,
@@ -630,12 +619,12 @@ fn annotate_snv(
                     } else {
                         bafs.mean() as f32
                     },
-                }
+                })
             } else {
-                SNVEvidence::new()
+                None
             }
         } else {
-            SNVEvidence::new()
+            None
         };
 
         result.push(snv_evidence);
@@ -662,7 +651,7 @@ fn write_annotated(
     region: &Interval,
     read_evidence: &Option<Vec<ReadEvidenceCount>>,
     doc_evidence: &Option<Vec<CoverageEvidence>>,
-    baf_evidence: &Option<Vec<SNVEvidence>>,
+    baf_evidence: &Option<Vec<Option<SNVEvidence>>>,
     writer: &mut bcf::Writer,
 ) -> Result<(), Error> {
     let mut reader = bcf::IndexedReader::from_path(&options.path_input)?;
@@ -693,23 +682,25 @@ fn write_annotated(
         }
         if let Some(evidence) = baf_evidence {
             let elem = evidence.get(idx).unwrap();
-            record.push_format_integer(b"VL", &[elem.snvs_left as i32])?;
-            record.push_format_integer(b"VM", &[elem.snvs_within as i32])?;
-            record.push_format_integer(b"VR", &[elem.snvs_right as i32])?;
-            if !elem.baf_mean.is_nan() {
-                record.push_format_float(b"BF", &[elem.baf_mean as f32])?;
-            }
+            if let Some(elem) = elem {
+                record.push_format_integer(b"VL", &[elem.snvs_left as i32])?;
+                record.push_format_integer(b"VM", &[elem.snvs_within as i32])?;
+                record.push_format_integer(b"VR", &[elem.snvs_right as i32])?;
+                if !elem.baf_mean.is_nan() {
+                    record.push_format_float(b"BF", &[elem.baf_mean as f32])?;
+                }
 
-            let length = record.info(b"SVLEN").integer()?.unwrap()[0];
-            let min_snvs = if length >= 100_000 {
-                50
-            } else {
-                5 * (length / 10_000)
-            };
-            if (elem.snvs_right < min_snvs || elem.snvs_left < min_snvs)
-                && elem.snvs_within < min_snvs
-            {
-                record.push_format_integer(b"ROH", &[1])?;
+                let length = record.info(b"SVLEN").integer()?.unwrap()[0];
+                let min_snvs = if length >= 100_000 {
+                    50
+                } else {
+                    5 * (length / 10_000)
+                };
+                if (elem.snvs_right < min_snvs || elem.snvs_left < min_snvs)
+                    && elem.snvs_within < min_snvs
+                {
+                    record.push_format_integer(b"ROH", &[1])?;
+                }
             }
         }
 

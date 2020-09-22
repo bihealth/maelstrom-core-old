@@ -433,7 +433,7 @@ fn annotate_doc(
     config: &Config,
     region: &Interval,
     median_doc: f64,
-) -> Result<Vec<CoverageEvidence>, Error> {
+) -> Result<Vec<Option<CoverageEvidence>>, Error> {
     let mut reader = bcf::IndexedReader::from_path(&options.path_input)?;
     let res = reader.fetch(
         reader.header().name2rid(region.contig().as_bytes())?,
@@ -456,7 +456,7 @@ fn annotate_doc(
         debug!(">>> sv_id = {}", &sv_id);
         let record = sv::StandardizedRecord::from_bcf_record(&mut record)?;
 
-        let norm_cov =
+        let cov_evidence =
             if record.sv_type == "DEL" || record.sv_type == "DUP" || record.sv_type == "CNV" {
                 let annotation_doc_baf_limit = config.annotation_doc_baf_limit as i64;
                 let (start, end) = if record.end2 - record.pos > annotation_doc_baf_limit as i64 {
@@ -487,18 +487,21 @@ fn annotate_doc(
                         .collect();
 
                     if covs.is_empty() {
-                        0.0_f64
+                        None
                     } else {
-                        covs.median() / median_doc
+                        Some(CoverageEvidence {
+                            sv_id,
+                            norm_cov: covs.median() / median_doc,
+                        })
                     }
                 } else {
-                    std::f64::NAN
+                    None
                 }
             } else {
-                std::f64::NAN
+                None
             };
 
-        result.push(CoverageEvidence { sv_id, norm_cov });
+        result.push(cov_evidence);
     }
 
     Ok(result)
@@ -650,7 +653,7 @@ fn write_annotated(
     _config: &Config,
     region: &Interval,
     read_evidence: &Option<Vec<ReadEvidenceCount>>,
-    doc_evidence: &Option<Vec<CoverageEvidence>>,
+    doc_evidence: &Option<Vec<Option<CoverageEvidence>>>,
     baf_evidence: &Option<Vec<Option<SNVEvidence>>>,
     writer: &mut bcf::Writer,
 ) -> Result<(), Error> {
@@ -678,7 +681,9 @@ fn write_annotated(
         }
         if let Some(evidence) = doc_evidence {
             let elem = evidence.get(idx).unwrap();
-            record.push_format_float(b"RD", &[elem.norm_cov as f32])?;
+            if let Some(elem) = elem {
+                record.push_format_float(b"RD", &[elem.norm_cov as f32])?;
+            }
         }
         if let Some(evidence) = baf_evidence {
             let elem = evidence.get(idx).unwrap();

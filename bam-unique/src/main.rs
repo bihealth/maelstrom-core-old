@@ -63,16 +63,24 @@ impl RecordIdentifier {
 }
 
 /// Write unique reads from chunk into the writer.
-fn write_unique(chunk: &[bam::Record], writer: &mut bam::Writer) -> Result<(), bam::errors::Error> {
+fn write_unique(
+    chunk: &[bam::Record],
+    writer: &mut bam::Writer,
+    read_id: &mut i64,
+) -> Result<(), bam::errors::Error> {
     let mut seen = HashSet::new();
 
     for record in chunk.iter() {
         let record_id = RecordIdentifier::from_record(record);
         if !seen.contains(&record_id) {
+            let mut record = record.clone();
+            record.push_aux(b"xI", &bam::record::Aux::Integer(*read_id));
             writer.write(&record)?;
             seen.insert(record_id);
         }
     }
+
+    *read_id += 1;
 
     Ok(())
 }
@@ -97,6 +105,7 @@ fn perform_filtration(options: &Options, config: &Config) -> Result<(), bam::err
         writer.set_threads(config.htslib_io_threads)?;
     }
 
+    let mut read_id: i64 = 0;
     let mut chunk: Vec<bam::Record> = Vec::new();
     let mut buffer = bam::Record::new();
     loop {
@@ -106,14 +115,14 @@ fn perform_filtration(options: &Options, config: &Config) -> Result<(), bam::err
             chunk.push(buffer.clone());
         } else {
             if buffer.qname() != chunk[0].qname() {
-                write_unique(&chunk, &mut writer)?;
+                write_unique(&chunk, &mut writer, &mut read_id)?;
                 chunk.clear();
             }
             chunk.push(buffer.clone());
         }
     }
     if !chunk.is_empty() {
-        write_unique(&chunk, &mut writer)?;
+        write_unique(&chunk, &mut writer, &mut read_id)?;
     }
 
     info!("Done scanning BAM file...");

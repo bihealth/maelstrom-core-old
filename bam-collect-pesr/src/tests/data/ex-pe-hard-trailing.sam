@@ -1,1 +1,9 @@
-../../../../bam-scan/src/tests/data/ex-pe-hard-trailing.sam
+@HD	VN:1.6	SO:coordinate
+@SQ	SN:one	LN:1000000
+@SQ	SN:two	LN:1000000
+@CO	Example with read pair "pair_expected" that shows hard-clipping of sufficient size with the supplementary alignment occuring before the primary one.
+pair_unexpected	99	one	100	0	100M	=	300	300	ACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGT	!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!	xI:i:0
+pair_unexpected	147	one	300	0	100M	=	100	-300	ACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGT	!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!	xI:i:0
+pair_expected	99	one	100	0	100M	=	300	300	ACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGT	!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!	xI:i:1
+pair_expected	147	one	300	0	50M50S	=	100	-300	ACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGT	!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!	xI:i:1
+pair_expected	2048	two	100100	0	50M50H	*	0	0	ACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTAC	!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!	xI:i:1

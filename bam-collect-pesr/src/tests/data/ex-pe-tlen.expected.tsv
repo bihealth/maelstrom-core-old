@@ -1,3 +1,3 @@
 #contig	start	end	signal
-one	99	199	{"PairedRead":{"read_name":"pair_expected","is_first1":true,"contig1":"one","start1":99,"end1":199,"strand1":"Forward","contig2":"one","start2":499,"strand2":"Reverse","tlen":500}}
-one	499	599	{"PairedRead":{"read_name":"pair_expected","is_first1":false,"contig1":"one","start1":499,"end1":599,"strand1":"Reverse","contig2":"one","start2":99,"strand2":"Forward","tlen":null}}
+one	99	199	{"PairedRead":{"read_id":1,"is_first1":true,"contig1":"one","start1":99,"end1":199,"strand1":"Forward","contig2":"one","start2":499,"strand2":"Reverse","tlen":500}}
+one	499	599	{"PairedRead":{"read_id":1,"is_first1":false,"contig1":"one","start1":499,"end1":599,"strand1":"Reverse","contig2":"one","start2":99,"strand2":"Forward","tlen":null}}

@@ -75,7 +75,7 @@ fn extract_evidence(
 
     if cl || cr {
         result.push(read_evidence::Record::SplitRead {
-            read_name: std::str::from_utf8(record.qname())?.to_string(),
+            read_id: record.aux(b"xI").unwrap().integer(),
             is_first: record.is_first_in_template(),
             contig: std::str::from_utf8(reader.header().tid2name(record.tid() as u32))?.to_string(),
             start: record.pos(),
@@ -91,7 +91,7 @@ fn extract_evidence(
 
     if is_discordant_pair(record, lib_properties) {
         result.push(read_evidence::Record::PairedRead {
-            read_name: std::str::from_utf8(record.qname())?.to_string(),
+            read_id: record.aux(b"xI").unwrap().integer(),
             is_first1: record.is_first_in_template(),
             contig1: std::str::from_utf8(reader.header().tid2name(record.tid() as u32))?
                 .to_string(),

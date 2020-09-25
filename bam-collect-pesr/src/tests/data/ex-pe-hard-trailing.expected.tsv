@@ -1,4 +1,4 @@
 #contig	start	end	signal
-one	299	349	{"SplitRead":{"read_name":"pair_expected","is_first":false,"contig":"one","start":299,"end":349,"clipped_sides":"Right"}}
-two	100099	100149	{"SplitRead":{"read_name":"pair_expected","is_first":false,"contig":"two","start":100099,"end":100149,"clipped_sides":"Right"}}
-two	100099	100149	{"PairedRead":{"read_name":"pair_expected","is_first1":false,"contig1":"two","start1":100099,"end1":100149,"strand1":"Forward","contig2":null,"start2":null,"strand2":null,"tlen":null}}
+one	299	349	{"SplitRead":{"read_id":1,"is_first":false,"contig":"one","start":299,"end":349,"clipped_sides":"Right"}}
+two	100099	100149	{"SplitRead":{"read_id":1,"is_first":false,"contig":"two","start":100099,"end":100149,"clipped_sides":"Right"}}
+two	100099	100149	{"PairedRead":{"read_id":1,"is_first1":false,"contig1":"two","start1":100099,"end1":100149,"strand1":"Forward","contig2":null,"start2":null,"strand2":null,"tlen":null}}

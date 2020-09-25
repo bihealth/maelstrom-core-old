@@ -27,7 +27,7 @@ pub enum Record {
     /// Paired read based evidence.
     PairedRead {
         /// Name of the read pair.
-        read_name: String,
+        read_id: i64,
         /// Whether this alignment is first in pair.
         is_first1: bool,
         /// Contig of this alignment.
@@ -50,7 +50,7 @@ pub enum Record {
     /// Split read based evidence.
     SplitRead {
         /// Name of the read pair.
-        read_name: String,
+        read_id: i64,
         /// Whether is first read in this alignment.
         is_first: bool,
         /// The alignment's contig.

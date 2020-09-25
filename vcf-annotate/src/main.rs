@@ -184,7 +184,7 @@ fn fetch_read_evidence(
     query: &SeqContigStranded,
     read_evidence: &AnnotMap<String, read_evidence::Record>,
     blocked: &Option<AnnotMap<String, ()>>,
-) -> (HashSet<String>, HashSet<(String, bool)>) {
+) -> (HashSet<i64>, HashSet<(i64, bool)>) {
     debug!("  fetch_read_evidence");
     let mut prs = HashSet::new();
     let mut srs = HashSet::new();
@@ -195,7 +195,7 @@ fn fetch_read_evidence(
     for record in read_evidence.find(query) {
         match record.data() {
             read_evidence::Record::PairedRead {
-                read_name,
+                read_id,
                 strand1,
                 contig1,
                 start1,
@@ -203,10 +203,7 @@ fn fetch_read_evidence(
                 start2,
                 ..
             } => {
-                debug!(
-                    "    [[PR]] read_name = {:?}, strand1 = {:?}",
-                    &read_name, strand1
-                );
+                debug!("    [[PR]] read_id = {}, strand1 = {:?}", &read_id, strand1);
                 match (query.strand(), strand1) {
                     (ReqStrand::Forward, Strand::Forward)
                     | (ReqStrand::Reverse, Strand::Reverse) => {
@@ -234,14 +231,14 @@ fn fetch_read_evidence(
                             false
                         };
                         if !skip {
-                            prs.insert(read_name.clone());
+                            prs.insert(*read_id);
                         }
                     }
                     _ => (), // ignored; no strand match
                 }
             }
             read_evidence::Record::SplitRead {
-                read_name,
+                read_id,
                 clipped_sides,
                 is_first,
                 contig,
@@ -249,8 +246,8 @@ fn fetch_read_evidence(
                 ..
             } => {
                 debug!(
-                    "    [[SR]] read_name = {:?}, clipped_sides = {:?}",
-                    &read_name, clipped_sides
+                    "    [[SR]] read_id = {}, clipped_sides = {:?}",
+                    &read_id, clipped_sides
                 );
                 match (query.strand(), clipped_sides) {
                     (ReqStrand::Forward, Sides::Both)
@@ -265,7 +262,7 @@ fn fetch_read_evidence(
                             false
                         };
                         if !skip {
-                            srs.insert((read_name.clone(), *is_first));
+                            srs.insert((*read_id, *is_first));
                         }
                     }
                     _ => (), // ignored; no side match
@@ -297,7 +294,7 @@ fn count_evidence(
         &left_prs
             .intersection(&right_prs)
             .cloned()
-            .collect::<String>()
+            .collect::<Vec<i64>>()
     );
     debug!(
         "  both prs = {:?}",

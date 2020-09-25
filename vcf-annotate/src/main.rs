@@ -18,6 +18,7 @@ use rust_htslib::{bcf, bcf::Read};
 
 use lib_common::bcf::{build_vcf_header, collect_contigs, guess_bcf_format};
 use lib_common::bed_to_annot_map;
+use lib_common::doc::load_doc_median;
 use lib_common::error::Error;
 use lib_common::parse_region;
 use lib_common::read_evidence;
@@ -636,17 +637,6 @@ fn annotate_snv(
     Ok(result)
 }
 
-/// Load DoC from file and compute median.
-fn load_doc_median(path: &str) -> Result<f64, Error> {
-    let mut reader = bcf::Reader::from_path(path)?;
-    let mut covs: Vec<f64> = Vec::new();
-    let mut record = reader.empty_record();
-    while reader.read(&mut record)? {
-        covs.push(record.format(b"RCV").float()?[0][0].into());
-    }
-    Ok((&covs).median())
-}
-
 /// Write annotated variants.
 fn write_annotated(
     options: &Options,
@@ -723,7 +713,7 @@ fn perform_annotation(options: &Options, config: &Config) -> Result<(), Error> {
 
     let median_doc = if let Some(path_doc_evidence) = &options.path_doc_evidence {
         info!("Computing median depth of coverage (DoC)...");
-        let median_doc = load_doc_median(path_doc_evidence)?;
+        let median_doc = load_doc_median(path_doc_evidence)?.on_allosomes;
         info!("... median DoC is {}", median_doc);
         Some(median_doc)
     } else {

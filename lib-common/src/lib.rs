@@ -1,6 +1,7 @@
 /// lib-common -- shared functionality
 pub mod bam;
 pub mod bcf;
+pub mod doc;
 pub mod error;
 pub mod read_evidence;
 pub mod stats;

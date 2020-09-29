@@ -1,6 +1,7 @@
 /// vcf-annotate -- Create annotations for VCF file with SVs.
 use std::collections::{HashMap, HashSet};
 use std::fs;
+use std::io::prelude::*;
 use std::path::Path;
 
 use bio::data_structures::annot_map::AnnotMap;
@@ -13,6 +14,7 @@ use bio_types::strand::ReqStrand;
 use clap::{App, Arg, ArgMatches};
 use git_version::git_version;
 use indicatif::{ProgressBar, ProgressStyle};
+use itertools::Itertools;
 use log::{debug, info, LevelFilter};
 use rust_htslib::{bcf, bcf::Read};
 
@@ -43,6 +45,10 @@ struct Options {
     path_doc_evidence: Option<String>,
     /// Path to input small variant VCF.
     path_snv_vcf: Option<String>,
+    /// Path to output per-contig DoC file.
+    path_out_doc_summary: Option<String>,
+    /// Path to output SNV BAF info file.
+    path_out_baf_snvs: Option<String>,
     /// Name of sample to annotate for.
     sample: String,
     /// Path to input VCF file.
@@ -70,6 +76,10 @@ impl Options {
                 .value_of("path-pesr-evidence")
                 .map(|s| s.to_string()),
             path_doc_evidence: matches.value_of("path-doc-evidence").map(|s| s.to_string()),
+            path_out_doc_summary: matches
+                .value_of("path-out-doc-summary")
+                .map(|s| s.to_string()),
+            path_out_baf_snvs: matches.value_of("path-out-baf-snvs").map(|s| s.to_string()),
             path_snv_vcf: matches.value_of("path-snv-vcf").map(|s| s.to_string()),
             sample: match matches.value_of("sample") {
                 Some(x) => String::from(x),
@@ -523,6 +533,7 @@ fn annotate_snv(
     options: &Options,
     config: &Config,
     region: &Interval,
+    file_out_baf_snvs: &mut Option<fs::File>,
 ) -> Result<Vec<Option<SNVEvidence>>, Error> {
     let mut reader = bcf::IndexedReader::from_path(&options.path_input)?;
     let res = reader.fetch(
@@ -606,8 +617,26 @@ fn annotate_snv(
                     {
                         let a0 = baf_record.format(b"AD").integer()?[0][gt0] as f64;
                         let a1 = baf_record.format(b"AD").integer()?[0][gt1] as f64;
+                        let baf = a1 / (a0 + a1);
+
+                        if let Some(file_out_baf_snvs) = file_out_baf_snvs {
+                            file_out_baf_snvs.write_all(
+                                format!(
+                                    "{}\t{}\t{}\t{}\t{}\t{}\t{}\n",
+                                    &record.chrom,
+                                    baf_record.pos() + 1,
+                                    std::str::from_utf8(baf_record.alleles()[0])?,
+                                    std::str::from_utf8(baf_record.alleles()[1])?,
+                                    "<sv-id>", // XXX
+                                    &std::str::from_utf8(baf_record.header().samples()[0])?,
+                                    baf,
+                                )
+                                .as_bytes(),
+                            )?;
+                        }
+
                         debug!("{} -- {} // {}", baf_record.pos(), a0, a1);
-                        bafs.push(a1 / (a0 + a1));
+                        bafs.push(baf);
                     }
                 }
 
@@ -709,13 +738,14 @@ fn perform_annotation(options: &Options, config: &Config) -> Result<(), Error> {
     info!("Starting to annotate variants for sample...");
 
     // TODO: try to load median DoCs from header first...
-    let median_doc = if let Some(path_doc_evidence) = &options.path_doc_evidence {
+    let (doc_median, median_doc) = if let Some(path_doc_evidence) = &options.path_doc_evidence {
         info!("Computing median depth of coverage (DoC)...");
-        let median_doc = load_doc_median(path_doc_evidence)?.on_autosomes;
+        let doc_median = load_doc_median(path_doc_evidence)?;
+        let median_doc = doc_median.on_autosomes;
         info!("... median DoC is {}", median_doc);
-        Some(median_doc)
+        (Some(doc_median), Some(median_doc))
     } else {
-        None
+        (None, None)
     };
 
     let reader = bcf::IndexedReader::from_path(&options.path_input)?;
@@ -727,6 +757,24 @@ fn perform_annotation(options: &Options, config: &Config) -> Result<(), Error> {
         guessed.uncompressed,
         guessed.format,
     )?;
+
+    // Write out DoC summary.
+    if let Some(path_out_doc_summary) = &options.path_out_doc_summary {
+        if let Some(doc_median) = &doc_median {
+            let mut file = fs::File::create(&path_out_doc_summary)?;
+            file.write_all(
+                format!(
+                    "CHROM\t{}\nautosomes\t{}\n",
+                    std::str::from_utf8(reader.header().samples()[0])?,
+                    doc_median.on_autosomes
+                )
+                .as_bytes(),
+            )?;
+            for (contig, count) in doc_median.by_chrom.iter().sorted_by_key(|(k, _)| k.clone()) {
+                file.write_all(format!("{}\t{}\n", contig, count).as_bytes())?;
+            }
+        }
+    }
 
     let contigs = collect_contigs(&reader)?;
 
@@ -768,6 +816,14 @@ fn perform_annotation(options: &Options, config: &Config) -> Result<(), Error> {
     };
     info!("Skipped {} blocked evidence records", skipped);
 
+    let mut file_out_baf_snvs = if let Some(path_out_baf_snvs) = &options.path_out_baf_snvs {
+        let mut file = fs::File::create(&path_out_baf_snvs)?;
+        file.write_all(b"CHROM\tPOS\tREF\tALT\tSVID\tSAMPLE\tBAF\n")?;
+        Some(file)
+    } else {
+        None
+    };
+
     info!("Processing regions/contigs...");
     for region in &regions {
         info!("Processing contig {:?}", region);
@@ -784,7 +840,7 @@ fn perform_annotation(options: &Options, config: &Config) -> Result<(), Error> {
         let baf_evidence = options
             .path_snv_vcf
             .as_ref()
-            .map(|_| annotate_snv(&options, &config, &region))
+            .map(|_| annotate_snv(&options, &config, &region, &mut file_out_baf_snvs))
             .transpose()?;
 
         write_annotated(
@@ -816,6 +872,8 @@ fn main() -> Result<(), Error> {
             Arg::from_usage("--path-pesr-evidence=[FILE] 'Path to PE/SR evidence file'"),
             Arg::from_usage("--path-doc-evidence=[FILE] 'Path to DoC evidence file'"),
             Arg::from_usage("--path-snv-vcf=[FILE] 'Path to BAF evidence file'"),
+            Arg::from_usage("--path-out-doc-summary=[FILE] 'Path to output DoC summary file'"),
+            Arg::from_usage("--path-out-baf-snvs=[FILE] 'Path to output SNV file for BAF'"),
             Arg::from_usage("-s, --sample=<SAMPLE> 'Set sample to analyze'"),
             Arg::from_usage("<input> 'input VCF file to read from'"),
             Arg::from_usage("<output> 'output VCF file"),
@@ -886,10 +944,14 @@ mod tests {
         path_snv_vcf: Option<String>,
         path_input: &str,
         path_expected: &str,
+        path_expected_doc: Option<String>,
+        path_expected_snv: Option<String>,
         regions: &Option<Vec<Interval>>,
         config_text: &str,
     ) -> Result<(), super::Error> {
         let path_output = String::from(tmp_dir.path().join("out.vcf").to_str().unwrap());
+        let path_output_doc = String::from(tmp_dir.path().join("out.doc.tsv").to_str().unwrap());
+        let path_output_snv = String::from(tmp_dir.path().join("out.snv.tsv").to_str().unwrap());
         let options = super::Options {
             verbosity: 1, // disable progress bar
             regions: regions.clone(),
@@ -897,6 +959,8 @@ mod tests {
             path_pesr_evidence: path_pesr_evidence,
             path_doc_evidence: path_doc_evidence,
             path_snv_vcf: path_snv_vcf,
+            path_out_doc_summary: path_expected_doc.as_ref().map(|_| path_output_doc),
+            path_out_baf_snvs: path_expected_snv.as_ref().map(|_| path_output_snv),
             sample: sample.to_string(),
             path_input: path_input.to_string(),
             path_output: path_output.clone(),
@@ -910,6 +974,20 @@ mod tests {
             fs::read_to_string(path_expected).unwrap(),
             fs::read_to_string(path_output).unwrap(),
         );
+
+        if let Some(path_out_doc_summary) = options.path_out_doc_summary {
+            assert_eq!(
+                fs::read_to_string(path_expected_doc.unwrap()).unwrap(),
+                fs::read_to_string(path_out_doc_summary).unwrap(),
+            );
+        }
+
+        if let Some(path_out_baf_snvs) = options.path_out_baf_snvs {
+            assert_eq!(
+                fs::read_to_string(path_expected_snv.unwrap()).unwrap(),
+                fs::read_to_string(path_out_baf_snvs).unwrap(),
+            );
+        }
 
         Ok(())
     }
@@ -925,6 +1003,8 @@ mod tests {
             Some(String::from("./src/tests/data/ex-delly-snvs.vcf.gz")),
             "./src/tests/data/ex-delly-svs.vcf.gz",
             "./src/tests/data/ex-delly.expected.vcf",
+            Some(String::from("./src/tests/data/ex-delly.expected.doc.tsv")),
+            Some(String::from("./src/tests/data/ex-delly.expected.snvs.tsv")),
             &None,
             "",
         )?;
@@ -942,6 +1022,12 @@ mod tests {
             Some(String::from("./src/tests/data/ex-delly-snvs.vcf.gz")),
             "./src/tests/data/ex-delly-svs.vcf.gz",
             "./src/tests/data/ex-delly.expected-blocked.vcf",
+            Some(String::from(
+                "./src/tests/data/ex-delly.expected-blocked.doc.tsv",
+            )),
+            Some(String::from(
+                "./src/tests/data/ex-delly.expected-blocked.snvs.tsv",
+            )),
             &None,
             "blocked_regions_bed = \"./src/tests/data/ex-delly-blocked.bed\"",
         )?;

@@ -62,7 +62,15 @@ pub fn build_vcf_header(template: &bcf::header::HeaderView) -> Result<bcf::Heade
     for (id, desc) in alts {
         header.push_record(format!("##ALT=<ID={},length={}>", &id, &desc).as_bytes());
     }
+
     let infos = vec![
+        ("AC", "A", "Integer", "Allele count in genotypes"),
+        (
+            "AN",
+            "1",
+            "Integer",
+            "Total number of alleles in called genotypes",
+        ),
         ("SVTYPE", "1", "String", "Type of structural variant"),
         ("CHR2", "1", "String", "Chromosome of end coordinate"),
         ("END", "1", "Integer", "End position of linear SV"),

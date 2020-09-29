@@ -7,6 +7,8 @@
 ##ALT=<ID=DUP,length=Duplication>
 ##ALT=<ID=INV,length=Inversion>
 ##ALT=<ID=CNV,length=Copy number variant>
+##INFO=<ID=AC,Number=A,Type=Integer,Description=Allele count in genotypes>
+##INFO=<ID=AN,Number=1,Type=Integer,Description=Total number of alleles in called genotypes>
 ##INFO=<ID=SVTYPE,Number=1,Type=String,Description=Type of structural variant>
 ##INFO=<ID=CHR2,Number=1,Type=String,Description=Chromosome of end coordinate>
 ##INFO=<ID=END,Number=1,Type=Integer,Description=End position of linear SV>

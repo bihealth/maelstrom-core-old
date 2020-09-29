@@ -12,6 +12,7 @@
 ##FORMAT=<ID=MQ,Number=1,Type=Float,Description="Mean read MAPQ from region">
 ##FORMAT=<ID=RCV,Number=1,Type=Float,Description="Raw coverage value">
 ##FORMAT=<ID=RCVSD,Number=1,Type=Float,Description="Raw coverage standard deviation">
+##median-coverage=<ID=sample,autosomes=0,one=0,two=0>
 #CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	sample
 one	1	one:1-100	N	<WINDOW>	0	.	END=100;MAPQ=0	GT:RCV:RCVSD:MQ	./.:0:0:0
 one	101	one:101-200	N	<WINDOW>	0	.	END=200;MAPQ=60	GT:RCV:RCVSD:MQ	./.:1.6:0.492366:60

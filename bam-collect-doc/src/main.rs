@@ -6,12 +6,15 @@ use bio_types::genome::{AbstractInterval, Interval};
 use clap::{App, Arg, ArgMatches};
 use git_version::git_version;
 use indicatif::{ProgressBar, ProgressStyle};
+use itertools::sorted;
 use log::{debug, info, LevelFilter};
-use rust_htslib::{bam, bam::Read, bcf};
+use rust_htslib::{bam, bam::Read as BamRead, bcf, bcf::Read as BcfRead};
 use separator::Separatable;
+use tempfile::tempdir;
 
 use lib_common::bam::{build_chroms_bam, samples_from_file};
 use lib_common::bcf::guess_bcf_format;
+use lib_common::doc::{load_doc_median, MedianReadDepthInfo};
 use lib_common::error::Error;
 use lib_common::parse_region;
 use lib_config::Config;
@@ -268,6 +271,43 @@ fn process_region(
     Ok(())
 }
 
+fn perform_final_write(
+    path_in: &str,
+    path_out: &str,
+    doc_median_info: &MedianReadDepthInfo,
+) -> Result<(), Error> {
+    let mut reader = bcf::Reader::from_path(&path_in)?;
+    let mut header = bcf::Header::from_template(reader.header());
+    let sample = std::str::from_utf8(reader.header().samples()[0])?;
+    let by_contig = sorted(
+        doc_median_info
+            .by_chrom
+            .iter()
+            .map(|(k, v)| format!("{}={}", k, v).to_string()),
+    )
+    .collect::<Vec<String>>();
+    header.push_record(
+        format!(
+            "##median-coverage=<ID={},autosomes={},{}>",
+            &sample,
+            doc_median_info.on_autosomes,
+            by_contig.join(", ")
+        )
+        .as_bytes(),
+    );
+
+    let guessed = guess_bcf_format(&path_out);
+    let mut writer =
+        bcf::Writer::from_path(&path_out, &header, guessed.uncompressed, guessed.format)?;
+    let mut record = reader.empty_record();
+    while reader.read(&mut record)? {
+        writer.translate(&mut record);
+        writer.write(&record)?;
+    }
+
+    Ok(())
+}
+
 fn perform_collection(options: &Options, config: &Config) -> Result<(), Error> {
     // Create output file writer and kick off processing.  This is done in its own block such
     // that the file is definitely closed when building the index below.
@@ -283,12 +323,27 @@ fn perform_collection(options: &Options, config: &Config) -> Result<(), Error> {
     };
 
     let samples = samples_from_file(&options.path_input)?;
-    let mut writer = build_bcf_writer(&options.path_output, &samples, &contigs)?;
 
-    // Process each contig.
-    for region in &regions {
-        process_region(&options, &config, &region, &mut writer)?;
+    // Write to temporary directory.
+    info!("Scan BAM file for coverage information; write results to temporary file.");
+    let tmp_dir = tempdir()?;
+    let tmp_path = tmp_dir.path();
+    let tmp_out = tmp_path.join("tmp.bcf").to_str().unwrap().to_string();
+    {
+        let mut writer = build_bcf_writer(&tmp_out, &samples, &contigs)?;
+        for region in &regions {
+            process_region(&options, &config, &region, &mut writer)?;
+        }
     }
+
+    info!("Done scanning BAM. Will now compute per-contig coverage medians.");
+    let doc_median_info = load_doc_median(&tmp_out)?;
+
+    info!("Done computing per-contig coverage medians. Building final coverage file.");
+    perform_final_write(&tmp_out, &options.path_output, &doc_median_info)?;
+
+    // Close temporary directory to we can handle any errors here.
+    tmp_dir.close()?;
 
     Ok(())
 }

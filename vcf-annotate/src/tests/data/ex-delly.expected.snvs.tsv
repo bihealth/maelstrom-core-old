@@ -1,0 +1,6 @@
+CHROM	POS	REF	ALT	SVID	SAMPLE	BAF
+one	210	A	C	SV1	sample-1	0.5
+one	220	A	C	SV1	sample-1	0.45
+one	230	A	C	SV1	sample-1	0.55
+one	240	A	C	SV1	sample-1	0.75
+one	250	A	C	SV1	sample-1	0.25

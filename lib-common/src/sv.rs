@@ -9,6 +9,7 @@ use super::error::Error;
 #[derive(Debug, Clone)]
 pub struct StandardizedRecord {
     pub chrom: String,
+    pub sv_id: String,
     pub pos: i64,
     pub reference: String,
     pub alt: String,
@@ -65,6 +66,7 @@ impl StandardizedRecord {
         Self {
             chrom: String::new(),
             pos: 0,
+            sv_id: String::new(),
             reference: String::new(),
             alt: String::new(),
             filters: Vec::new(), // TODO: remove?
@@ -103,6 +105,7 @@ impl StandardizedRecord {
         Ok(Self {
             chrom: String::from_utf8(record.header().rid2name(record.rid().unwrap())?.to_vec())?,
             pos: record.pos(),
+            sv_id: String::from_utf8(record.id())?,
             reference: String::from_utf8(record.alleles()[0].to_vec())?,
             alt: String::from_utf8(record.alleles()[1].to_vec())?,
             filters: record
@@ -247,6 +250,7 @@ mod tests {
             super::StandardizedRecord {
                 chrom: "1".to_owned(),
                 pos: 10_002,
+                sv_id: "SV1".to_owned(),
                 reference: "A".to_owned(),
                 alt: "<DEL>".to_owned(),
                 filters: Vec::new(),
@@ -276,6 +280,7 @@ mod tests {
         let record = super::StandardizedRecord {
             chrom: "1".to_owned(),
             pos: 10_002,
+            sv_id: "SV1".to_owned(),
             reference: "A".to_owned(),
             alt: "<DEL>".to_owned(),
             filters: Vec::new(),

@@ -710,7 +710,7 @@ fn perform_annotation(options: &Options, config: &Config) -> Result<(), Error> {
 
     let median_doc = if let Some(path_doc_evidence) = &options.path_doc_evidence {
         info!("Computing median depth of coverage (DoC)...");
-        let median_doc = load_doc_median(path_doc_evidence)?.on_allosomes;
+        let median_doc = load_doc_median(path_doc_evidence)?.on_autosomes;
         info!("... median DoC is {}", median_doc);
         Some(median_doc)
     } else {

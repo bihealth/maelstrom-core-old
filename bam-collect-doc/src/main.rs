@@ -284,7 +284,7 @@ fn perform_final_write(
         doc_median_info
             .by_chrom
             .iter()
-            .map(|(k, v)| format!("_{}={}", k, v).to_string()),
+            .map(|(k, v)| format!("_{}={}", k, v)),
     )
     .collect::<Vec<String>>();
     header.push_record(

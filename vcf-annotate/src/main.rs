@@ -770,7 +770,11 @@ fn perform_annotation(options: &Options, config: &Config) -> Result<(), Error> {
                 )
                 .as_bytes(),
             )?;
-            for (contig, count) in doc_median.by_chrom.iter().sorted_by_key(|(k, _)| k.clone()) {
+            for (contig, count) in doc_median
+                .by_chrom
+                .iter()
+                .sorted_by_key(|(k, _)| (*k).clone())
+            {
                 file.write_all(format!("{}\t{}\n", contig, count).as_bytes())?;
             }
         }

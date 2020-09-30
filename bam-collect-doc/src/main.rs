@@ -279,11 +279,12 @@ fn perform_final_write(
     let mut reader = bcf::Reader::from_path(&path_in)?;
     let mut header = bcf::Header::from_template(reader.header());
     let sample = std::str::from_utf8(reader.header().samples()[0])?;
+    // NB: we need to prefix the underscore because htslib does not digits in front of keys
     let by_contig = sorted(
         doc_median_info
             .by_chrom
             .iter()
-            .map(|(k, v)| format!("{}={}", k, v).to_string()),
+            .map(|(k, v)| format!("_{}={}", k, v).to_string()),
     )
     .collect::<Vec<String>>();
     header.push_record(
@@ -291,7 +292,7 @@ fn perform_final_write(
             "##median-coverage=<ID={},autosomes={},{}>",
             &sample,
             doc_median_info.on_autosomes,
-            by_contig.join(", ")
+            by_contig.join(",")
         )
         .as_bytes(),
     );

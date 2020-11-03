@@ -23,7 +23,6 @@
 ##FORMAT=<ID=PR,Number=1,Type=Float,Description=Paired read evidence>
 ##FORMAT=<ID=SR,Number=1,Type=Float,Description=Split read evidence>
 ##FORMAT=<ID=RD,Number=1,Type=Float,Description=Read depth evidence>
-##FORMAT=<ID=BF,Number=1,Type=Float,Description=B allele frequency evidence>
 ##FORMAT=<ID=VL,Number=1,Type=Integer,Description=SNV count left of CNV region>
 ##FORMAT=<ID=VM,Number=1,Type=Integer,Description=SNV count within CNV region>
 ##FORMAT=<ID=VR,Number=1,Type=Integer,Description=SNV count right of CNV region>

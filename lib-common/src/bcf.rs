@@ -96,7 +96,6 @@ pub fn build_vcf_header(template: &bcf::header::HeaderView) -> Result<bcf::Heade
         ("PR", "1", "Float", "Paired read evidence"),
         ("SR", "1", "Float", "Split read evidence"),
         ("RD", "1", "Float", "Read depth evidence"),
-        ("BF", "1", "Float", "B allele frequency evidence"),
         ("VL", "1", "Integer", "SNV count left of CNV region"),
         ("VM", "1", "Integer", "SNV count within CNV region"),
         ("VR", "1", "Integer", "SNV count right of CNV region"),

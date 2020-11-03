@@ -22,11 +22,10 @@
 ##FORMAT=<ID=PR,Number=1,Type=Float,Description=Paired read evidence>
 ##FORMAT=<ID=SR,Number=1,Type=Float,Description=Split read evidence>
 ##FORMAT=<ID=RD,Number=1,Type=Float,Description=Read depth evidence>
-##FORMAT=<ID=BF,Number=1,Type=Float,Description=B allele frequency evidence>
 ##FORMAT=<ID=VL,Number=1,Type=Integer,Description=SNV count left of CNV region>
 ##FORMAT=<ID=VM,Number=1,Type=Integer,Description=SNV count within CNV region>
 ##FORMAT=<ID=VR,Number=1,Type=Integer,Description=SNV count right of CNV region>
 ##FORMAT=<ID=ROH,Number=1,Type=Integer,Description=Run of homozygosity>
 #CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	sample-1
-one	201	SV1	A	<DEL>	0	.	END2=400;CHR2=one;SVTYPE=DEL;STRANDS=+-;SVLEN=300;ALGORITHMS=delly	GT:delly:PR:SR:RD:VL:VM:VR:BF	0/1:1:0:0:0.5:1:5:1:0.5
-two	201	SV2	A	<DUP>	0	.	END2=400;CHR2=two;SVTYPE=DUP;STRANDS=-+;SVLEN=300;ALGORITHMS=delly	GT:delly:PR:SR:RD:VL:VM:VR	0/1:1:1:0:2:1:0:1
+one	201	SV1	A	<DEL>	0	.	END2=400;CHR2=one;SVTYPE=DEL;STRANDS=+-;SVLEN=300;ALGORITHMS=delly	GT:delly:PR:SR:RD:VL:VM:VR	0/1:1:0:0:0.5:1:5:1
+two	201	SV2	A	<DUP>	0	.	END2=400;CHR2=two;SVTYPE=DUP;STRANDS=-+;SVLEN=300;ALGORITHMS=delly	GT:delly:PR:SR:RD	0/1:1:1:0:2

@@ -16,4 +16,10 @@ one	240	.	A	C	0	.	.	GT:AD:DP	0/1:5,15:20
 one	250	.	A	C	0	.	.	GT:AD:DP	0/1:15,5:20
 one	410	.	A	C	0	.	.	GT:AD:DP	0/1:0,20:20
 two	190	.	A	C	0	.	.	GT:AD:DP	0/1:0,20:20
+two	210	.	A	C	0	.	.	GT:AD:DP	0/1:10,10:20
+two	215	.	A	CT	0	.	.	GT:AD:DP	0/1:1,19:20
+two	220	.	A	C	0	.	.	GT:AD:DP	0/1:11,9:20
+two	230	.	A	C	0	.	.	GT:AD:DP	0/1:9,11:20
+two	240	.	A	C	0	.	.	GT:AD:DP	0/1:5,15:20
+two	250	.	A	C	0	.	.	GT:AD:DP	0/1:15,5:20
 two	410	.	A	C	0	.	.	GT:AD:DP	0/1:0,20:20

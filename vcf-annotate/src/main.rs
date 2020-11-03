@@ -524,8 +524,6 @@ struct SNVEvidence {
     snvs_within: i32,
     /// Number of SNVs in right flanking region.
     snvs_right: i32,
-    /// BAF value
-    baf_mean: f32,
 }
 
 /// Perform BAF annotation of SV.
@@ -604,7 +602,9 @@ fn annotate_snv(
                 }
             }
 
-            if baf_reader.fetch(rid, start, end).is_ok() {
+            if (record.sv_type == "DEL" || record.sv_type == "DUP" || record.sv_type == "CNV")
+                && baf_reader.fetch(rid, start, end).is_ok()
+            {
                 let mut bafs = Vec::new();
                 while baf_reader.read(&mut baf_record)? {
                     let genotype: bcf::record::Genotype = baf_record.genotypes().unwrap().get(0);
@@ -618,25 +618,22 @@ fn annotate_snv(
                         let a0 = baf_record.format(b"AD").integer()?[0][gt0] as f64;
                         let a1 = baf_record.format(b"AD").integer()?[0][gt1] as f64;
                         let baf = a1 / (a0 + a1);
-
-                        if let Some(file_out_baf_snvs) = file_out_baf_snvs {
-                            file_out_baf_snvs.write_all(
-                                format!(
-                                    "{}\t{}\t{}\t{}\t{}\t{}\t{}\n",
-                                    &record.chrom,
-                                    baf_record.pos() + 1,
-                                    std::str::from_utf8(baf_record.alleles()[0])?,
-                                    std::str::from_utf8(baf_record.alleles()[1])?,
-                                    &record.sv_id,
-                                    &std::str::from_utf8(baf_record.header().samples()[0])?,
-                                    baf,
-                                )
-                                .as_bytes(),
-                            )?;
-                        }
-
                         debug!("{} -- {} // {}", baf_record.pos(), a0, a1);
                         bafs.push(baf);
+                    }
+                }
+
+                if record.sv_type == "DUP" || record.sv_type == "CNV" {
+                    if let Some(file_out_baf_snvs) = file_out_baf_snvs {
+                        file_out_baf_snvs.write_all(
+                            format!(
+                                "{}\t{}\t{}\n",
+                                &record.sv_id,
+                                &std::str::from_utf8(baf_record.header().samples()[0])?,
+                                bafs.iter().map(|x| format!("{:.5}", x)).join(";"),
+                            )
+                            .as_bytes(),
+                        )?;
                     }
                 }
 
@@ -644,11 +641,6 @@ fn annotate_snv(
                     snvs_left,
                     snvs_right,
                     snvs_within: bafs.len() as i32,
-                    baf_mean: if bafs.is_empty() {
-                        std::f32::NAN
-                    } else {
-                        bafs.mean() as f32
-                    },
                 })
             } else {
                 None
@@ -704,11 +696,11 @@ fn write_annotated(
         if let Some(evidence) = baf_evidence {
             let elem = evidence.get(idx).unwrap();
             if let Some(elem) = elem {
-                record.push_format_integer(b"VL", &[elem.snvs_left as i32])?;
-                record.push_format_integer(b"VM", &[elem.snvs_within as i32])?;
-                record.push_format_integer(b"VR", &[elem.snvs_right as i32])?;
-                if !elem.baf_mean.is_nan() {
-                    record.push_format_float(b"BF", &[elem.baf_mean as f32])?;
+                let sv_type = std::str::from_utf8(record.info(b"SVTYPE").string()?.unwrap()[0])?;
+                if sv_type == "DEL" {
+                    record.push_format_integer(b"VL", &[elem.snvs_left as i32])?;
+                    record.push_format_integer(b"VM", &[elem.snvs_within as i32])?;
+                    record.push_format_integer(b"VR", &[elem.snvs_right as i32])?;
                 }
 
                 let length = record.info(b"SVLEN").integer()?.unwrap()[0];
@@ -822,7 +814,7 @@ fn perform_annotation(options: &Options, config: &Config) -> Result<(), Error> {
 
     let mut file_out_baf_snvs = if let Some(path_out_baf_snvs) = &options.path_out_baf_snvs {
         let mut file = fs::File::create(&path_out_baf_snvs)?;
-        file.write_all(b"CHROM\tPOS\tREF\tALT\tSVID\tSAMPLE\tBAF\n")?;
+        file.write_all(b"SVID\tSAMPLE\tBAFS\n")?;
         Some(file)
     } else {
         None
